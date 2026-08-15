@@ -62,7 +62,13 @@ jobs:
           curl -fsSL https://deno.land/install.sh | sh
           echo "$HOME/.deno/bin" >> $GITHUB_PATH
           
-          python3 -m pip install --user --upgrade git+https://github.com/yt-dlp/yt-dlp.git curl-cffi requests --break-system-packages || python3 -m pip install --user --upgrade git+https://github.com/yt-dlp/yt-dlp.git curl-cffi requests
+          # FIXED: In ubuntu-latest, apt-get python libraries are sometimes needed for C-extensions like curl_cffi
+          sudo apt-get update
+          sudo apt-get install -y python3-pip ffmpeg curl jq p7zip-full python3-dev build-essential libffi-dev
+          
+          # Force install curl_cffi FIRST to ensure impersonation target "chrome" is successfully registered
+          python3 -m pip install --user curl_cffi requests --break-system-packages || python3 -m pip install --user curl_cffi requests
+          python3 -m pip install --user --upgrade git+https://github.com/yt-dlp/yt-dlp.git --break-system-packages || python3 -m pip install --user --upgrade git+https://github.com/yt-dlp/yt-dlp.git
           echo "$HOME/.local/bin" >> $GITHUB_PATH
 
       - name: Download Video (Private Site Optimized)
@@ -89,27 +95,26 @@ jobs:
             FORMAT="bestvideo[height<=$QUAL]+bestaudio/best[height<=$QUAL]/best"
           fi
 
-          # FIXED: Used an array array to properly handle spaces and quotes without bash eval errors
-          # Also added --verbose for better debugging if it fails again
-          
           SPOOF_UA="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-          
-          # We use normal arrays and command execution instead of dangerous eval strings
           SUCCESS=false
           
+          # METHOD 1: Direct Mode + Browser Impersonation (Fixed target: chrome110)
+          # Many sites including PH use Cloudflare Turnstile, requiring exact impersonation targets provided by curl_cffi
           echo "=========================================================="
-          echo "▶️ Method 1: Direct Mode (Private Site Mode)..."
-          if yt-dlp --format "$FORMAT" --merge-output-format mp4 --restrict-filenames --no-playlist -o "downloaded_video/%(title)s.%(ext)s" --no-check-certificates --user-agent "$SPOOF_UA" --referer "$URL" ${COOKIE_FLAG:+--cookies cookies.txt} "$URL"; then
+          echo "▶️ Method 1: Direct Mode + Browser Impersonation..."
+          if yt-dlp --format "$FORMAT" --merge-output-format mp4 --restrict-filenames --no-playlist -o "downloaded_video/%(title)s.%(ext)s" --no-check-certificates --user-agent "$SPOOF_UA" --referer "$URL" --impersonate "chrome110" ${COOKIE_FLAG:+--cookies cookies.txt} "$URL"; then
             SUCCESS=true
           else
+            # METHOD 2: Generic Direct (No Proxy)
             echo "=========================================================="
-            echo "▶️ Method 2: Direct Mode + Browser Impersonation..."
-            if yt-dlp --format "$FORMAT" --merge-output-format mp4 --restrict-filenames --no-playlist -o "downloaded_video/%(title)s.%(ext)s" --no-check-certificates --user-agent "$SPOOF_UA" --referer "$URL" --impersonate "chrome" ${COOKIE_FLAG:+--cookies cookies.txt} "$URL"; then
+            echo "▶️ Method 2: Direct Mode (Private Site Mode)..."
+            if yt-dlp --format "$FORMAT" --merge-output-format mp4 --restrict-filenames --no-playlist -o "downloaded_video/%(title)s.%(ext)s" --no-check-certificates --user-agent "$SPOOF_UA" --referer "$URL" ${COOKIE_FLAG:+--cookies cookies.txt} "$URL"; then
               SUCCESS=true
             else
+              # METHOD 3: WARP Proxy + Impersonation
               echo "=========================================================="
-              echo "▶️ Method 3: WARP Proxy (In case site blocks GitHub IPs)..."
-              if yt-dlp --proxy "socks5://127.0.0.1:1080" --format "$FORMAT" --merge-output-format mp4 --restrict-filenames --no-playlist -o "downloaded_video/%(title)s.%(ext)s" --no-check-certificates --user-agent "$SPOOF_UA" --referer "$URL" ${COOKIE_FLAG:+--cookies cookies.txt} "$URL"; then
+              echo "▶️ Method 3: WARP Proxy + Browser Impersonation..."
+              if yt-dlp --proxy "socks5://127.0.0.1:1080" --format "$FORMAT" --merge-output-format mp4 --restrict-filenames --no-playlist -o "downloaded_video/%(title)s.%(ext)s" --no-check-certificates --user-agent "$SPOOF_UA" --referer "$URL" --impersonate "chrome110" ${COOKIE_FLAG:+--cookies cookies.txt} "$URL"; then
                 SUCCESS=true
               fi
             fi
