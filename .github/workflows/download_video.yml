@@ -106,7 +106,6 @@ jobs:
           fi
           
           echo "🔒 Encrypting file with AES-256..."
-          # -mhe=on encrypts header/file names so nobody can even see the name of the downloaded video!
           7z a -p"$USER_PASS" -mhe=on downloaded_video/Secure_Video.7z "$FILE_PATH"
           
           echo "🧹 Shredding original unencrypted video..."
@@ -116,33 +115,41 @@ jobs:
 
       - name: Upload to Ephemeral Storage
         run: |
+          # خاموش کردن خطایابی سخت‌گیرانه گیت‌هاب تا در صورت فیلتر بودن یک سایت کل پروسه قطع نشه
+          set +e
+          
           FILE_PATH="downloaded_video/Secure_Video.7z"
           PASS="${{ steps.encrypt.outputs.password }}"
           
           echo "▶️ Trying File.io..."
-          FILEIO_RESP=$(curl -s -F "file=@$FILE_PATH" https://file.io)
-          FILEIO_LINK=$(echo "$FILEIO_RESP" | jq -r '.link' 2>/dev/null)
+          FILEIO_RESP=$(curl -s -F "file=@$FILE_PATH" https://file.io || echo "")
+          FILEIO_LINK=$(echo "$FILEIO_RESP" | jq -r '.link' 2>/dev/null || echo "")
           
-          if [ -n "$FILEIO_LINK" ] && [ "$FILEIO_LINK" != "null" ]; then
+          if [ -n "$FILEIO_LINK" ] && [ "$FILEIO_LINK" != "null" ] && [[ "$FILEIO_LINK" == http* ]]; then
             echo "=========================================================="
             echo "✅ FILE.IO LINK: $FILEIO_LINK"
             echo "⚠️ این لینک بعد از [یک بار دانلود] پاک می‌شود!"
           else
             echo "▶️ Trying GoFile.io..."
-            SERVER=$(curl -s https://api.gofile.io/servers | jq -r '.data.servers[0].name' 2>/dev/null)
+            SERVER=$(curl -s https://api.gofile.io/servers | jq -r '.data.servers[0].name' 2>/dev/null || echo "")
             if [ -n "$SERVER" ] && [ "$SERVER" != "null" ]; then
-              GOFILE_RESP=$(curl -s -F "file=@$FILE_PATH" "https://${SERVER}.gofile.io/contents/uploadfile")
-              GOFILE_LINK=$(echo "$GOFILE_RESP" | jq -r '.data.downloadPage' 2>/dev/null)
+              GOFILE_RESP=$(curl -s -F "file=@$FILE_PATH" "https://${SERVER}.gofile.io/contents/uploadfile" || echo "")
+              GOFILE_LINK=$(echo "$GOFILE_RESP" | jq -r '.data.downloadPage' 2>/dev/null || echo "")
               
-              if [ -n "$GOFILE_LINK" ] && [ "$GOFILE_LINK" != "null" ]; then
+              if [ -n "$GOFILE_LINK" ] && [ "$GOFILE_LINK" != "null" ] && [[ "$GOFILE_LINK" == http* ]]; then
                 echo "=========================================================="
                 echo "✅ GOFILE LINK: $GOFILE_LINK"
               else
                 echo "▶️ Trying BashUpload..."
-                BASH_LINK=$(curl -s -T "$FILE_PATH" https://bashupload.com/ | grep -oP 'https://bashupload.com/[^\s]+' | head -n 1)
+                BASH_LINK=$(curl -s -T "$FILE_PATH" https://bashupload.com/ | grep -oP 'https://bashupload.com/[^\s]+' | head -n 1 || echo "")
                 echo "=========================================================="
                 echo "✅ BASHUPLOAD LINK: $BASH_LINK"
               fi
+            else
+              echo "▶️ Trying BashUpload (GoFile Servers Down)..."
+              BASH_LINK=$(curl -s -T "$FILE_PATH" https://bashupload.com/ | grep -oP 'https://bashupload.com/[^\s]+' | head -n 1 || echo "")
+              echo "=========================================================="
+              echo "✅ BASHUPLOAD LINK: $BASH_LINK"
             fi
           fi
           
@@ -153,6 +160,9 @@ jobs:
           
           echo "🧹 Securely shredding the encrypted archive..."
           shred -u "$FILE_PATH" || rm -f "$FILE_PATH"
+          
+          # روشن کردن مجدد خطایابی
+          set -e
 
       - name: Wipe Workspace Traces
         if: always()
