@@ -65,7 +65,7 @@ jobs:
           python3 -m pip install --user --upgrade git+https://github.com/yt-dlp/yt-dlp.git curl-cffi requests --break-system-packages || python3 -m pip install --user --upgrade git+https://github.com/yt-dlp/yt-dlp.git curl-cffi requests
           echo "$HOME/.local/bin" >> $GITHUB_PATH
 
-      - name: Download Video
+      - name: Download Video (Private Site Optimized)
         run: |
           mkdir -p downloaded_video
           
@@ -76,7 +76,7 @@ jobs:
             echo "$COOKIES_TXT" > cookies.txt
             sed -i 's/\r$//' cookies.txt
             COOKIE_FLAG="--cookies cookies.txt"
-            echo "🍪 Cookies perfectly loaded & sanitized!"
+            echo "🍪 Cookies loaded for Private Site authentication!"
           else
             COOKIE_FLAG=""
           fi
@@ -89,42 +89,36 @@ jobs:
             FORMAT="bestvideo[height<=$QUAL]+bestaudio/best[height<=$QUAL]/best"
           fi
 
-          # Fix the impersonate flag syntax error (was swallowing the --cookies flag)
-          # Also, since you are NOT primarily downloading from YouTube, we prioritize the Generic Direct Method first!
-          FLAGS="--format $FORMAT --merge-output-format mp4 --restrict-filenames --no-playlist -o downloaded_video/%(title)s.%(ext)s --no-check-certificates"
+          # ADDED: Referer and standard Chrome User-Agent which is CRITICAL for Private Sites/VODs
+          SPOOF_UA="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+          FLAGS="--format $FORMAT --merge-output-format mp4 --restrict-filenames --no-playlist -o downloaded_video/%(title)s.%(ext)s --no-check-certificates --user-agent "$SPOOF_UA" --referer "$URL""
           
           SUCCESS=false
           
-          # METHOD 1: Generic Direct (No Proxy, No Impersonation). Best for general websites!
+          # METHOD 1: Generic Direct (No Proxy) - Most private sites bind cookies to IP region or block VPNs/WARP. Direct is best!
           echo "=========================================================="
-          echo "▶️ Method 1: Direct Mode (Generic Site - No Proxy)..."
-          if yt-dlp $FLAGS $COOKIE_FLAG "$URL"; then
+          echo "▶️ Method 1: Direct Mode (Private Site Mode)..."
+          if eval yt-dlp $FLAGS $COOKIE_FLAG "$URL"; then
             SUCCESS=true
           else
-            # METHOD 2: Generic Direct + Impersonation (Bypass Cloudflare on general sites)
+            # METHOD 2: Direct + Impersonate (For Cloudflare protected private sites)
             echo "=========================================================="
             echo "▶️ Method 2: Direct Mode + Browser Impersonation..."
-            if yt-dlp $FLAGS --impersonate "chrome" $COOKIE_FLAG "$URL"; then
+            if eval yt-dlp $FLAGS --impersonate "chrome" $COOKIE_FLAG "$URL"; then
               SUCCESS=true
             else
-              # METHOD 3: WARP Proxy + Generic
+              # METHOD 3: WARP Proxy
               echo "=========================================================="
-              echo "▶️ Method 3: WARP Proxy (General Anti-Block)..."
-              if yt-dlp --proxy "socks5://127.0.0.1:1080" $FLAGS $COOKIE_FLAG "$URL"; then
+              echo "▶️ Method 3: WARP Proxy (In case site blocks GitHub IPs)..."
+              if eval yt-dlp --proxy "socks5://127.0.0.1:1080" $FLAGS $COOKIE_FLAG "$URL"; then
                 SUCCESS=true
-              else
-                # METHOD 4: Android Client (YouTube/IG specific fallback)
-                echo "=========================================================="
-                echo "▶️ Method 4: Mobile Client Spoofing..."
-                if yt-dlp $FLAGS --extractor-args "youtube:player_client=android" $COOKIE_FLAG "$URL"; then
-                  SUCCESS=true
-                fi
               fi
             fi
           fi
           
           if [ "$SUCCESS" = false ]; then
             echo "❌ All download methods failed."
+            echo "⚠️ اگر کوکی درست است اما دانلود نمیشود، احتمالاً سایت 'IP Binding' دارد (یعنی کوکی شما فقط روی IP اینترنت خودتان کار میکند و سرور گیت‌هاب را مسدود میکند)."
             exit 1
           fi
 
