@@ -69,20 +69,9 @@ jobs:
           mkdir -p downloaded_video
           
           if [ -n "$COOKIES_TXT" ]; then
-            # Fix Telegram messing up tabs (convert 1 or more spaces to a tab, except in the values)
-            echo "$COOKIES_TXT" | awk '
-              /^#/ { print; next }
-              /^[a-zA-Z]/ { print; next }
-              NF >= 7 {
-                printf "%s\t%s\t%s\t%s\t%s\t%s\t", $1, $2, $3, $4, $5, $6;
-                for(i=7; i<=NF; i++) printf "%s%s", $i, (i==NF ? "" : " ");
-                print "";
-                next
-              }
-              { print }
-            ' > cookies.txt
+            echo "$COOKIES_TXT" > cookies.txt
             sed -i 's/\r$//' cookies.txt
-            echo "🍪 Cookies loaded and formatted for Private Site authentication!"
+            echo "🍪 Cookies loaded for Private Site authentication!"
           else
             touch cookies.txt
           fi
@@ -98,7 +87,7 @@ jobs:
           SUCCESS=false
           
           echo "=========================================================="
-          echo "▶️ Method 1: Nightly Binary Impersonation..."
+          echo "▶️ Method 1: Direct Mode (Best for Private Sites)..."
           
           set +e
           ARGS=(
@@ -124,7 +113,7 @@ jobs:
             SUCCESS=true
           else
             echo "=========================================================="
-            echo "▶️ Method 2: Cloudflare WARP Proxy..."
+            echo "▶️ Method 2: WARP Proxy (In case site blocks GitHub IPs)..."
             
             PROXY_ARGS=(
               "--proxy" "socks5://127.0.0.1:1080"
