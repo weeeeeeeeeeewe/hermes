@@ -1,0 +1,33 @@
+name: Download Song
+
+on:
+  workflow_dispatch:
+    inputs:
+      song_name:
+        description: 'Name of the song to download (e.g. Harvester of Sorrow)'
+        required: true
+        default: 'Harvester of Sorrow'
+        type: string
+
+jobs:
+  download:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+          sudo curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp
+          sudo chmod a+rx /usr/local/bin/yt-dlp
+
+      - name: Download Audio
+        run: |
+          mkdir downloaded_song
+          yt-dlp -x --audio-format mp3 "ytsearch1:${{ github.event.inputs.song_name }} audio" -o "downloaded_song/%(title)s.%(ext)s"
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: downloaded-song
+          path: downloaded_song/*.mp3
+          retention-days: 5
