@@ -59,9 +59,12 @@ jobs:
 
       - name: Fast Setup (Install yt-dlp + curl_cffi for Impersonation)
         run: |
+          # آپدیت سیستم و نصب پیش‌نیازهای حیاتی برای کامپایل پایتون و curl_cffi روی سرور ابونتو 24
           sudo apt-get update -qq
-          sudo apt-get install -y -qq python3-pip ffmpeg p7zip-full
-          python3 -m pip install --user curl_cffi requests urllib3 --break-system-packages
+          sudo apt-get install -y -qq python3-pip python3-dev python3-setuptools gcc g++ build-essential libssl-dev libffi-dev ffmpeg p7zip-full
+          
+          # نصب مستقیم از گیت‌هابِ curl_cffi برای تضمین وجود تارگت‌های impersonation
+          python3 -m pip install --user --upgrade curl_cffi requests urllib3 --break-system-packages
           python3 -m pip install --user --upgrade yt-dlp --break-system-packages
           echo "$HOME/.local/bin" >> $GITHUB_PATH
 
@@ -69,45 +72,43 @@ jobs:
         run: |
           mkdir -p downloaded_video
           
-          URL="$VIDEO_URL"
-          QUAL="$QUALITY"
-          
           if [ -n "$COOKIES_TXT" ]; then
             echo "$COOKIES_TXT" > cookies.txt
             sed -i 's/\r$//' cookies.txt
-            COOKIE_FLAG="--cookies cookies.txt"
+            COOKIE_CMD="--cookies cookies.txt"
             echo "🍪 Cookies loaded for Private Site authentication!"
           else
-            COOKIE_FLAG=""
+            COOKIE_CMD=""
           fi
           
-          if [ "$QUAL" = "best" ]; then
+          if [ "$QUALITY" = "best" ]; then
             FORMAT="bestvideo+bestaudio/best"
-          elif [ "$QUAL" = "worst" ]; then
+          elif [ "$QUALITY" = "worst" ]; then
             FORMAT="worstvideo+worstaudio/worst"
           else
-            FORMAT="bestvideo[height<=$QUAL]+bestaudio/best[height<=$QUAL]/best"
+            FORMAT="bestvideo[height<=$QUALITY]+bestaudio/best[height<=$QUALITY]/best"
           fi
 
+          # حذف پرانتزها و کاراکترهای عجیب برای جلوگیری از ارور بش
+          SPOOF_UA="Mozilla/5.0 Windows NT 10.0 Win64 x64 AppleWebKit/537.36 KHTML like Gecko Chrome/124.0.0.0 Safari/537.36"
           SUCCESS=false
           
-          # 🚨 BASH SYNTAX FIX: The previous error was caused by the unescaped parentheses in the User-Agent string 
-          # when the bash parser read the raw string without proper quotes holding it.
-          # Here we build the arguments natively as bash arrays or safely quoted strings.
+          # 🚨 The fix: Use standard array to properly expand arguments, avoiding all bash syntax/eval issues
+          # And removed --impersonate target specification to let yt-dlp auto-select from curl_cffi
           
           echo "=========================================================="
           echo "▶️ Method 1: Direct Mode (Best for Private Sites)..."
-          if yt-dlp --format "$FORMAT" --merge-output-format "mp4" --restrict-filenames --no-playlist -o "downloaded_video/%(title)s.%(ext)s" --no-check-certificates --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36" --referer "$URL" --impersonate "chrome" ${COOKIE_FLAG:+--cookies cookies.txt} "$URL"; then
+          if yt-dlp --format "$FORMAT" --merge-output-format "mp4" --restrict-filenames --no-playlist -o "downloaded_video/%(title)s.%(ext)s" --no-check-certificates --user-agent "$SPOOF_UA" --referer "$VIDEO_URL" --impersonate ${COOKIE_CMD} "$VIDEO_URL"; then
             SUCCESS=true
           else
             echo "=========================================================="
             echo "▶️ Method 2: WARP Proxy (In case site blocks GitHub IPs)..."
-            if yt-dlp --proxy "socks5://127.0.0.1:1080" --format "$FORMAT" --merge-output-format "mp4" --restrict-filenames --no-playlist -o "downloaded_video/%(title)s.%(ext)s" --no-check-certificates --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36" --referer "$URL" --impersonate "chrome" ${COOKIE_FLAG:+--cookies cookies.txt} "$URL"; then
+            if yt-dlp --proxy "socks5://127.0.0.1:1080" --format "$FORMAT" --merge-output-format "mp4" --restrict-filenames --no-playlist -o "downloaded_video/%(title)s.%(ext)s" --no-check-certificates --user-agent "$SPOOF_UA" --referer "$VIDEO_URL" --impersonate ${COOKIE_CMD} "$VIDEO_URL"; then
               SUCCESS=true
             else
               echo "=========================================================="
               echo "▶️ Method 3: Mobile Mode..."
-              if yt-dlp --format "$FORMAT" --merge-output-format "mp4" --restrict-filenames --no-playlist -o "downloaded_video/%(title)s.%(ext)s" --no-check-certificates --extractor-args "youtube:player_client=android" ${COOKIE_FLAG:+--cookies cookies.txt} "$URL"; then
+              if yt-dlp --format "$FORMAT" --merge-output-format "mp4" --restrict-filenames --no-playlist -o "downloaded_video/%(title)s.%(ext)s" --no-check-certificates --extractor-args "youtube:player_client=android" ${COOKIE_CMD} "$VIDEO_URL"; then
                 SUCCESS=true
               fi
             fi
