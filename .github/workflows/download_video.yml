@@ -1,4 +1,4 @@
-name: 🎬 Download Video (Cloudflare IP Bypass + Auto-Delete)
+name: 🎬 Download Video (Ultra Reliable + Auto-Delete)
 
 on:
   workflow_dispatch:
@@ -8,7 +8,7 @@ on:
         required: true
         type: string
       quality:
-        description: '🎬 کیفیت ویدیو'
+        description: '🎬 کیفیت ویدیو (best=بهترین, worst=پایین‌ترین)'
         required: false
         default: 'best'
         type: choice
@@ -17,6 +17,10 @@ on:
           - 1080
           - 720
           - 480
+          - 360
+          - 240
+          - 144
+          - worst
 
 jobs:
   download:
@@ -25,7 +29,7 @@ jobs:
     timeout-minutes: 60
 
     steps:
-      - name: Start Cloudflare WARP (IP Bypass)
+      - name: Start Cloudflare WARP (Anti-Block)
         run: |
           docker network create warp-net || true
           docker run -d \
@@ -39,43 +43,70 @@ jobs:
             caomingjun/warp
           sleep 15
 
-      - name: Install Dependencies
+      - name: Install Dependencies (Deno & yt-dlp)
         run: |
           sudo apt-get update
           sudo apt-get install -y python3-pip ffmpeg curl jq
+          
+          # نصب Deno برای رفع خطاهای جاوااسکریپت سایت‌ها (مخصوصا یوتیوب)
+          curl -fsSL https://deno.land/install.sh | sh
+          echo "$HOME/.deno/bin" >> $GITHUB_PATH
+          
+          # نسخه Master برای بیشترین پایداری
           pip3 install --upgrade git+https://github.com/yt-dlp/yt-dlp.git
 
-      - name: Download Video
+      - name: Download Video (Ultimate Reliability)
         run: |
           mkdir -p downloaded_video
+          export PATH="$HOME/.deno/bin:$PATH"
+          
           URL="${{ github.event.inputs.video_url }}"
           QUAL="${{ github.event.inputs.quality }}"
           
+          # تنظیم دقیق کیفیت بر اساس انتخاب کاربر (از بهترین تا پایین‌ترین)
           if [ "$QUAL" = "best" ]; then
             FORMAT="bestvideo+bestaudio/best"
+          elif [ "$QUAL" = "worst" ]; then
+            FORMAT="worstvideo+worstaudio/worst"
           else
             FORMAT="bestvideo[height<=$QUAL]+bestaudio/best[height<=$QUAL]/best"
           fi
 
           echo "Target URL: $URL"
-          
-          # Force yt-dlp to route through Cloudflare WARP SOCKS5 proxy to bypass IP bans
-          yt-dlp --proxy "socks5://127.0.0.1:1080" \
-            --format "$FORMAT" \
-            --merge-output-format mp4 \
-            --restrict-filenames \
-            --no-playlist \
-            -o "downloaded_video/%(title)s.%(ext)s" \
-            "$URL" || \
-          yt-dlp \
-            --format "$FORMAT" \
-            --merge-output-format mp4 \
-            --restrict-filenames \
-            --no-playlist \
-            -o "downloaded_video/%(title)s.%(ext)s" \
-            "$URL"
+          echo "Selected Quality: $QUAL"
 
-      - name: Upload to Temporary Storage (Auto-Delete after 1 download)
+          FLAGS="--format $FORMAT --merge-output-format mp4 --restrict-filenames --no-playlist -o downloaded_video/%(title)s.%(ext)s --no-check-certificates"
+          
+          SUCCESS=false
+          
+          # روش اول: استفاده از کلاینت اندروید + پروکسی WARP (بیشترین احتمال موفقیت)
+          echo "▶️ Trying Method 1 (Android Client + WARP)..."
+          if yt-dlp --proxy "socks5://127.0.0.1:1080" $FLAGS --extractor-args "youtube:player_client=android" "$URL"; then
+            SUCCESS=true
+          fi
+          
+          # روش دوم: استفاده از Deno + پروکسی WARP (اگه سایت ضد ربات قوی داشت)
+          if [ "$SUCCESS" = false ]; then
+            echo "▶️ Trying Method 2 (Web Client + Deno + WARP)..."
+            if yt-dlp --proxy "socks5://127.0.0.1:1080" $FLAGS --extractor-args "youtube:player_client=web" --js-runtimes deno "$URL"; then
+              SUCCESS=true
+            fi
+          fi
+          
+          # روش سوم: دایرکت (بدون پروکسی) - برای سایت‌هایی که پروکسی‌ها رو بلاک می‌کنن (مثل بعضی سایت‌های ایرانی)
+          if [ "$SUCCESS" = false ]; then
+            echo "▶️ Trying Method 3 (Direct / No Proxy)..."
+            if yt-dlp $FLAGS "$URL"; then
+              SUCCESS=true
+            fi
+          fi
+          
+          if [ "$SUCCESS" = false ]; then
+            echo "❌ All download methods failed. Video might be private or region-locked."
+            exit 1
+          fi
+
+      - name: Upload to Ephemeral Storage (Auto-Delete)
         run: |
           FILE_PATH=$(ls downloaded_video/* | head -n 1)
           if [ -z "$FILE_PATH" ]; then
@@ -86,24 +117,31 @@ jobs:
           FILENAME=$(basename "$FILE_PATH")
           echo "📤 Uploading $FILENAME to temp storage..."
           
-          # Use transfer.sh which allows setting a self-destruct mechanism
-          # Max-Downloads: 1 means as soon as you download it once, the file is destroyed on the server!
-          # Max-Days: 1 means if you don't download it, it deletes itself within 24 hours.
+          # اولویت ۱: transfer.sh (انفجار بعد از ۱ بار دانلود)
           LINK=$(curl -s -H "Max-Downloads: 1" -H "Max-Days: 1" --upload-file "$FILE_PATH" "https://transfer.sh/$FILENAME")
           
-          echo "=========================================================="
-          echo "✅ DOWNLOAD LINK: $LINK"
-          echo "⚠️ This link will SELF-DESTRUCT after ONE download!"
-          echo "=========================================================="
+          if [[ "$LINK" == http* ]]; then
+            echo "=========================================================="
+            echo "✅ TRANSFER.SH LINK: $LINK"
+            echo "⚠️ این لینک بعد از [یک بار دانلود] به صورت خودکار برای همیشه پاک می‌شود!"
+            echo "=========================================================="
+          else
+            # اولویت ۲: bashupload (در صورت قطعی سرور اول)
+            echo "transfer.sh failed or was slow, trying bashupload..."
+            BASH_LINK=$(curl -s -T "$FILE_PATH" https://bashupload.com/$FILENAME | grep -oP 'https://bashupload.com/[^\s]+' | head -n 1)
+            echo "=========================================================="
+            echo "✅ BASHUPLOAD LINK: $BASH_LINK"
+            echo "⚠️ این سرور جایگزین است. ویدیو به صورت خودکار منقضی می‌شود."
+            echo "=========================================================="
+          fi
           
-          # Securely wipe the file from the GitHub runner
-          shred -u "$FILE_PATH"
+          # پاک کردن کامل فایل از روی سرور گیت‌هاب با shred (غیرقابل ریکاوری)
+          echo "🧹 Securely shredding the file from GitHub server..."
+          shred -u "$FILE_PATH" || rm -f "$FILE_PATH"
 
-      - name: Wipe Traces
+      - name: Wipe Workspace Traces
         if: always()
         run: |
           docker stop warp || true
           docker rm warp || true
           rm -rf downloaded_video/
-          # Ensure workspace is completely clean
-          rm -rf $GITHUB_WORKSPACE/*
