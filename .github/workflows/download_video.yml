@@ -1,14 +1,14 @@
-name: 🎬 Download Video (Ultimate Release)
+name: Download Video
 
 on:
   workflow_dispatch:
     inputs:
       video_url:
-        description: '🔗 Video Link'
+        description: 'URL'
         required: true
         type: string
       quality:
-        description: '🎬 Quality'
+        description: 'Quality'
         required: false
         default: 'best'
         type: choice
@@ -22,17 +22,17 @@ on:
           - 144
           - worst
       password:
-        description: '🔒 Password'
+        description: 'Password'
         required: false
         type: string
       cookies:
-        description: '🍪 Cookies.txt'
+        description: 'Cookies'
         required: false
         type: string
 
 jobs:
   download:
-    name: "📥 Fetch & Encrypt Video"
+    name: "Fetch Video"
     runs-on: ubuntu-22.04
     timeout-minutes: 60
 
@@ -46,15 +46,7 @@ jobs:
       - name: Start Cloudflare WARP
         run: |
           docker network create warp-net || true
-          docker run -d \
-            --name warp \
-            --restart=always \
-            --network warp-net \
-            -p 1080:1080 \
-            --cap-add NET_ADMIN \
-            --sysctl net.ipv6.conf.all.disable_ipv6=0 \
-            --sysctl net.ipv4.conf.all.src_valid_mark=1 \
-            caomingjun/warp
+          docker run -d --name warp --restart=always --network warp-net -p 1080:1080 --cap-add NET_ADMIN --sysctl net.ipv6.conf.all.disable_ipv6=0 --sysctl net.ipv4.conf.all.src_valid_mark=1 caomingjun/warp
           sleep 5
 
       - name: Setup yt-dlp binary (Nightly Release)
@@ -64,14 +56,13 @@ jobs:
           sudo wget -q https://github.com/yt-dlp/yt-dlp-nightly-builds/releases/latest/download/yt-dlp_linux -O /usr/local/bin/yt-dlp
           sudo chmod a+rx /usr/local/bin/yt-dlp
 
-      - name: Download Video (Impersonation via Bundle)
+      - name: Download Video
         run: |
           mkdir -p downloaded_video
           
           if [ -n "$COOKIES_TXT" ]; then
             echo "$COOKIES_TXT" > cookies.txt
             sed -i 's/\r$//' cookies.txt
-            echo "🍪 Cookies loaded for Private Site authentication!"
           else
             touch cookies.txt
           fi
@@ -85,10 +76,6 @@ jobs:
           fi
 
           SUCCESS=false
-          
-          echo "=========================================================="
-          echo "▶️ Method 1: Direct Mode (Best for Private Sites)..."
-          
           set +e
           ARGS=(
             "--format" "$FORMAT"
@@ -100,35 +87,18 @@ jobs:
             "--impersonate" "chrome"
             "--referer" "$VIDEO_URL"
           )
-          
-          if [ -s cookies.txt ]; then
-            ARGS+=("--cookies" "cookies.txt")
-          fi
-          
+          if [ -s cookies.txt ]; then ARGS+=("--cookies" "cookies.txt"); fi
           ARGS+=("$VIDEO_URL")
-          
           yt-dlp "${ARGS[@]}"
-            
           if [ $? -eq 0 ]; then
             SUCCESS=true
           else
-            echo "=========================================================="
-            echo "▶️ Method 2: WARP Proxy (In case site blocks GitHub IPs)..."
-            
-            PROXY_ARGS=(
-              "--proxy" "socks5://127.0.0.1:1080"
-              "${ARGS[@]}"
-            )
-            
+            PROXY_ARGS=("--proxy" "socks5://127.0.0.1:1080" "${ARGS[@]}")
             yt-dlp "${PROXY_ARGS[@]}"
-              
             if [ $? -eq 0 ]; then
               SUCCESS=true
             else
-              echo "=========================================================="
-              echo "▶️ Method 3: Python API Injection..."
-              # Create python runner
-              cat << 'EOF' > run_bypass.py
+              cat << 'PYEOF' > run_bypass.py
 import subprocess
 import sys
 url = sys.argv[1]
@@ -145,42 +115,25 @@ if sys.argv[2] == 'true':
     cmd.insert(1, "--cookies")
     cmd.insert(2, "cookies.txt")
 subprocess.run(cmd)
-EOF
+PYEOF
               HAS_COOKIES="false"
               if [ -s cookies.txt ]; then HAS_COOKIES="true"; fi
               python3 run_bypass.py "$VIDEO_URL" "$HAS_COOKIES"
-              
-              if [ $? -eq 0 ]; then
-                SUCCESS=true
-              fi
+              if [ $? -eq 0 ]; then SUCCESS=true; fi
             fi
           fi
           set -e
           
           FILE_COUNT=$(ls -1q downloaded_video | wc -l || echo 0)
-          if [ "$FILE_COUNT" -eq 0 ] || [ "$SUCCESS" = false ]; then
-            echo "❌ All download methods failed."
-            exit 1
-          fi
+          if [ "$FILE_COUNT" -eq 0 ] || [ "$SUCCESS" = false ]; then exit 1; fi
 
-      - name: Encrypt Video (Zero-Knowledge Security)
+      - name: Encrypt Video
         id: encrypt
         run: |
           FILE_PATH=$(find downloaded_video -type f | head -n 1)
-          if [ -z "$FILE_PATH" ]; then
-            echo "❌ No file found!"
-            exit 1
-          fi
-          
-          if [ -z "$USER_PASS" ]; then
-            PASS=$(openssl rand -hex 4)
-          else
-            PASS="$USER_PASS"
-          fi
-          
-          echo "🔒 Encrypting file with AES-256..."
+          if [ -z "$FILE_PATH" ]; then exit 1; fi
+          if [ -z "$USER_PASS" ]; then PASS=$(openssl rand -hex 4); else PASS="$USER_PASS"; fi
           7z a -p"$PASS" -mhe=on downloaded_video/Secure_Video.7z "$FILE_PATH"
-          
           shred -u "$FILE_PATH" || rm -f "$FILE_PATH"
           echo "password=$PASS" >> $GITHUB_OUTPUT
 
@@ -189,33 +142,15 @@ EOF
           set +e
           FILE_PATH="downloaded_video/Secure_Video.7z"
           PASS="${{ steps.encrypt.outputs.password }}"
-          
-          echo "▶️ Uploading to GoFile..."
           SERVER=$(curl -s https://api.gofile.io/servers | jq -r '.data.servers[0].name' || echo "store1")
           GOFILE_RESP=$(curl -s -F file=@"$FILE_PATH" "https://${SERVER}.gofile.io/contents/uploadfile")
           GOFILE_LINK=$(echo "$GOFILE_RESP" | jq -r '.data.downloadPage' 2>/dev/null || echo "")
-          
           if [ -n "$GOFILE_LINK" ] && [ "$GOFILE_LINK" != "null" ]; then
-            echo "=========================================================="
-            echo "✅ GOFILE LINK: $GOFILE_LINK"
+            echo "GOFILE LINK: $GOFILE_LINK"
           else
-            echo "▶️ GoFile failed, Trying 0x0.st..."
             BASH_LINK=$(curl -s -F "file=@$FILE_PATH" https://0x0.st || echo "")
-            echo "=========================================================="
-            echo "✅ 0x0.st LINK: $BASH_LINK"
+            echo "0x0.st LINK: $BASH_LINK"
           fi
-          
-          echo "=========================================================="
-          echo "🔑 رمز عبور فایل شما برای استخراج: $PASS"
-          echo "=========================================================="
-          
+          echo "رمز عبور فایل شما برای استخراج: $PASS"
           shred -u "$FILE_PATH" || rm -f "$FILE_PATH"
           set -e
-
-      - name: Wipe Workspace Traces
-        if: always()
-        run: |
-          docker stop warp || true
-          docker rm warp || true
-          rm -rf downloaded_video/
-          rm -f cookies.txt
