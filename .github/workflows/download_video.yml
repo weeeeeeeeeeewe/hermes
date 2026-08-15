@@ -57,20 +57,19 @@ jobs:
             caomingjun/warp
           sleep 10
 
-      - name: Fast Setup (Pre-installed Tools + Stable Binaries)
+      - name: Fast Setup (Impersonation Libs + Master yt-dlp)
         run: |
-          # Install Deno
           curl -fsSL https://deno.land/install.sh | sh
           echo "$HOME/.deno/bin" >> $GITHUB_PATH
           
-          # Fix Exit Code 8: Use official release URL instead of Nightly (which caused 404)
-          sudo curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp
-          sudo chmod a+rx /usr/local/bin/yt-dlp
+          # Install curl-cffi for Chrome impersonation to bypass 410 Gone / 403 Forbidden
+          # Install bleeding-edge yt-dlp directly from github master to fix the new YouTube 410 error
+          python3 -m pip install --user --upgrade git+https://github.com/yt-dlp/yt-dlp.git curl-cffi requests --break-system-packages || python3 -m pip install --user --upgrade git+https://github.com/yt-dlp/yt-dlp.git curl-cffi requests
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
 
       - name: Download Video
         run: |
           mkdir -p downloaded_video
-          export PATH="$HOME/.deno/bin:$PATH"
           
           URL="$VIDEO_URL"
           QUAL="$QUALITY"
@@ -92,7 +91,8 @@ jobs:
             FORMAT="bestvideo[height<=$QUAL]+bestaudio/best[height<=$QUAL]/best"
           fi
 
-          FLAGS="--format $FORMAT --merge-output-format mp4 --restrict-filenames --no-playlist -o downloaded_video/%(title)s.%(ext)s --no-check-certificates $COOKIE_FLAG"
+          # Added --impersonate to force Chrome browser spoofing
+          FLAGS="--format $FORMAT --merge-output-format mp4 --restrict-filenames --no-playlist -o downloaded_video/%(title)s.%(ext)s --no-check-certificates --impersonate $COOKIE_FLAG"
           
           SUCCESS=false
           
