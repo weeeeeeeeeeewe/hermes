@@ -61,6 +61,7 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq ffmpeg p7zip-full jq curl python3-pip
+          sudo python3 -m pip install -U packaging build hatchling
           # Install the bleeding-edge master branch directly to fix XHamster KeyError('videoModel')
           sudo python3 -m pip install -U https://github.com/yt-dlp/yt-dlp/archive/master.tar.gz
 
