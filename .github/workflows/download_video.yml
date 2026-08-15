@@ -1,4 +1,4 @@
-name: 🎬 Download Video (Nightly Binary)
+name: 🎬 Download Video (Ultimate Release)
 
 on:
   workflow_dispatch:
@@ -60,7 +60,7 @@ jobs:
       - name: Setup yt-dlp binary (Nightly Release)
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq ffmpeg p7zip-full jq
+          sudo apt-get install -y -qq ffmpeg p7zip-full jq curl
           sudo wget -q https://github.com/yt-dlp/yt-dlp-nightly-builds/releases/latest/download/yt-dlp_linux -O /usr/local/bin/yt-dlp
           sudo chmod a+rx /usr/local/bin/yt-dlp
 
@@ -163,19 +163,19 @@ jobs:
           FILE_PATH="downloaded_video/Secure_Video.7z"
           PASS="${{ steps.encrypt.outputs.password }}"
           
-          echo "▶️ Trying File.io..."
-          FILEIO_RESP=$(curl -s -F "file=@$FILE_PATH" https://file.io || echo "")
-          FILEIO_LINK=$(echo "$FILEIO_RESP" | jq -r '.link' 2>/dev/null || echo "")
+          echo "▶️ Uploading to GoFile..."
+          SERVER=$(curl -s https://api.gofile.io/servers | jq -r '.data.servers[0].name' || echo "store1")
+          GOFILE_RESP=$(curl -s -F file=@"$FILE_PATH" "https://${SERVER}.gofile.io/contents/uploadfile")
+          GOFILE_LINK=$(echo "$GOFILE_RESP" | jq -r '.data.downloadPage' 2>/dev/null || echo "")
           
-          if [ -n "$FILEIO_LINK" ] && [ "$FILEIO_LINK" != "null" ] && [[ "$FILEIO_LINK" == http* ]]; then
+          if [ -n "$GOFILE_LINK" ] && [ "$GOFILE_LINK" != "null" ]; then
             echo "=========================================================="
-            echo "✅ FILE.IO LINK: $FILEIO_LINK"
-            echo "⚠️ این لینک بعد از [یک بار دانلود] پاک می‌شود!"
+            echo "✅ GOFILE LINK: $GOFILE_LINK"
           else
-            echo "▶️ Trying BashUpload..."
-            BASH_LINK=$(curl -s -T "$FILE_PATH" https://bashupload.com/ | grep -oP 'https://bashupload.com/[^\s]+' | head -n 1 || echo "")
+            echo "▶️ GoFile failed, Trying 0x0.st..."
+            BASH_LINK=$(curl -s -F "file=@$FILE_PATH" https://0x0.st || echo "")
             echo "=========================================================="
-            echo "✅ BASHUPLOAD LINK: $BASH_LINK"
+            echo "✅ 0x0.st LINK: $BASH_LINK"
           fi
           
           echo "=========================================================="
