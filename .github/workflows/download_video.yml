@@ -22,7 +22,11 @@ on:
           - 144
           - worst
       password:
-        description: '🔒 رمز عبور فایل (اگر خالی بگذارید، رمز تصادفی قدرتمند ساخته می‌شود)'
+        description: '🔒 رمز عبور فایل (اگر خالی بگذارید، رمز تصادفی ساخته می‌شود)'
+        required: false
+        type: string
+      cookies:
+        description: '🍪 کوکی (اختیاری - برای دانلود ویدیوهای پرایوت، اینستاگرام، یا دارای محدودیت سنی)'
         required: false
         type: string
 
@@ -31,6 +35,12 @@ jobs:
     name: "📥 Fetch & Encrypt Video"
     runs-on: ubuntu-latest
     timeout-minutes: 60
+
+    env:
+      VIDEO_URL: ${{ github.event.inputs.video_url }}
+      QUALITY: ${{ github.event.inputs.quality }}
+      USER_PASS: ${{ github.event.inputs.password }}
+      COOKIES_TXT: ${{ github.event.inputs.cookies }}
 
     steps:
       - name: Start Cloudflare WARP (Anti-Block)
@@ -62,8 +72,17 @@ jobs:
           mkdir -p downloaded_video
           export PATH="$HOME/.deno/bin:$PATH"
           
-          URL="${{ github.event.inputs.video_url }}"
-          QUAL="${{ github.event.inputs.quality }}"
+          URL="$VIDEO_URL"
+          QUAL="$QUALITY"
+          
+          # ساخت فایل کوکی در صورت وجود
+          if [ -n "$COOKIES_TXT" ]; then
+            echo "$COOKIES_TXT" > cookies.txt
+            COOKIE_FLAG="--cookies cookies.txt"
+            echo "🍪 Cookies loaded for authentication!"
+          else
+            COOKIE_FLAG=""
+          fi
           
           if [ "$QUAL" = "best" ]; then
             FORMAT="bestvideo+bestaudio/best"
@@ -73,21 +92,44 @@ jobs:
             FORMAT="bestvideo[height<=$QUAL]+bestaudio/best[height<=$QUAL]/best"
           fi
 
-          FLAGS="--format $FORMAT --merge-output-format mp4 --restrict-filenames --no-playlist -o downloaded_video/%(title)s.%(ext)s --no-check-certificates"
+          FLAGS="--format $FORMAT --merge-output-format mp4 --restrict-filenames --no-playlist -o downloaded_video/%(title)s.%(ext)s --no-check-certificates $COOKIE_FLAG"
           
           SUCCESS=false
           
-          echo "▶️ Trying Method 1 (Android Client + WARP)..."
+          echo "=========================================================="
+          echo "▶️ Trying Method 1 (Android Client + WARP - Best for YT)..."
           if yt-dlp --proxy "socks5://127.0.0.1:1080" $FLAGS --extractor-args "youtube:player_client=android" "$URL"; then
             SUCCESS=true
-          elif yt-dlp --proxy "socks5://127.0.0.1:1080" $FLAGS --extractor-args "youtube:player_client=web" --js-runtimes deno "$URL"; then
-            SUCCESS=true
-          elif yt-dlp $FLAGS "$URL"; then
-            SUCCESS=true
+          else
+            echo "=========================================================="
+            echo "▶️ Trying Method 2 (Web Client + Deno + WARP)..."
+            if yt-dlp --proxy "socks5://127.0.0.1:1080" $FLAGS --extractor-args "youtube:player_client=web" --js-runtimes deno "$URL"; then
+              SUCCESS=true
+            else
+              echo "=========================================================="
+              echo "▶️ Trying Method 3 (Generic Site + WARP - Good for Twitter/TikTok)..."
+              if yt-dlp --proxy "socks5://127.0.0.1:1080" $FLAGS "$URL"; then
+                SUCCESS=true
+              else
+                echo "=========================================================="
+                echo "▶️ Trying Method 4 (Direct / No Proxy - Good for IG/Local sites)..."
+                if yt-dlp $FLAGS "$URL"; then
+                  SUCCESS=true
+                else
+                  echo "=========================================================="
+                  echo "▶️ Trying Method 5 (Direct + Geo Bypass)..."
+                  if yt-dlp $FLAGS --geo-bypass "$URL"; then
+                    SUCCESS=true
+                  fi
+                fi
+              fi
+            fi
           fi
           
           if [ "$SUCCESS" = false ]; then
             echo "❌ All download methods failed."
+            echo "💡 دلیل احتمالی: ویدیو پرایوت (Private) است، محدودیت سنی دارد، یا نیاز به لاگین دارد (مثل اینستاگرام)."
+            echo "👈 راه‌حل: فایل کوکی (cookies.txt) مرورگر خود را استخراج کرده و در فیلد cookies قرار دهید."
             exit 1
           fi
 
@@ -100,24 +142,23 @@ jobs:
             exit 1
           fi
           
-          USER_PASS="${{ github.event.inputs.password }}"
           if [ -z "$USER_PASS" ]; then
-            USER_PASS=$(openssl rand -hex 4)
+            PASS=$(openssl rand -hex 4)
+          else
+            PASS="$USER_PASS"
           fi
           
           echo "🔒 Encrypting file with AES-256..."
-          7z a -p"$USER_PASS" -mhe=on downloaded_video/Secure_Video.7z "$FILE_PATH"
+          7z a -p"$PASS" -mhe=on downloaded_video/Secure_Video.7z "$FILE_PATH"
           
           echo "🧹 Shredding original unencrypted video..."
           shred -u "$FILE_PATH" || rm -f "$FILE_PATH"
           
-          echo "password=$USER_PASS" >> $GITHUB_OUTPUT
+          echo "password=$PASS" >> $GITHUB_OUTPUT
 
       - name: Upload to Ephemeral Storage
         run: |
-          # خاموش کردن خطایابی سخت‌گیرانه گیت‌هاب تا در صورت فیلتر بودن یک سایت کل پروسه قطع نشه
           set +e
-          
           FILE_PATH="downloaded_video/Secure_Video.7z"
           PASS="${{ steps.encrypt.outputs.password }}"
           
@@ -156,12 +197,8 @@ jobs:
           echo "=========================================================="
           echo "🔑 رمز عبور فایل شما برای استخراج: $PASS"
           echo "=========================================================="
-          echo "⚠️ حتماً رمز بالا را کپی کنید. بدون آن فایل باز نخواهد شد!"
           
-          echo "🧹 Securely shredding the encrypted archive..."
           shred -u "$FILE_PATH" || rm -f "$FILE_PATH"
-          
-          # روشن کردن مجدد خطایابی
           set -e
 
       - name: Wipe Workspace Traces
