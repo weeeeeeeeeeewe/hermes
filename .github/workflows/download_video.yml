@@ -57,12 +57,12 @@ jobs:
             caomingjun/warp
           sleep 5
 
-      - name: Setup yt-dlp binary (Nightly Release)
+      - name: Setup yt-dlp (Master Branch for latest Extractor Fixes)
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq ffmpeg p7zip-full jq curl
-          sudo wget -q https://github.com/yt-dlp/yt-dlp-nightly-builds/releases/latest/download/yt-dlp_linux -O /usr/local/bin/yt-dlp
-          sudo chmod a+rx /usr/local/bin/yt-dlp
+          sudo apt-get install -y -qq ffmpeg p7zip-full jq curl python3-pip
+          # Install the bleeding-edge master branch directly to fix XHamster KeyError('videoModel')
+          sudo python3 -m pip install -U https://github.com/yt-dlp/yt-dlp/archive/master.tar.gz
 
       - name: Download Video (Impersonation via Bundle)
         run: |
@@ -97,7 +97,6 @@ jobs:
             "--no-playlist"
             "-o" "downloaded_video/%(title)s.%(ext)s"
             "--no-check-certificates"
-            "--impersonate" "chrome"
             "--referer" "$VIDEO_URL"
           )
           
