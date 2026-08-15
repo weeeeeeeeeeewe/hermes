@@ -69,12 +69,20 @@ jobs:
           mkdir -p downloaded_video
           
           if [ -n "$COOKIES_TXT" ]; then
-            echo "$COOKIES_TXT" > cookies.txt
+            # Fix Telegram messing up tabs (convert 1 or more spaces to a tab, except in the values)
+            echo "$COOKIES_TXT" | awk '
+              /^#/ { print; next }
+              NF >= 7 {
+                printf "%s\t%s\t%s\t%s\t%s\t%s\t", $1, $2, $3, $4, $5, $6;
+                for(i=7; i<=NF; i++) printf "%s%s", $i, (i==NF ? "" : " ");
+                print "";
+                next
+              }
+              { print }
+            ' > cookies.txt
             sed -i 's/\r$//' cookies.txt
-            COOKIE_CMD="--cookies cookies.txt"
-            echo "🍪 Cookies loaded for Private Site authentication!"
+            echo "🍪 Cookies loaded and formatted for Private Site authentication!"
           else
-            COOKIE_CMD=""
             touch cookies.txt
           fi
           
