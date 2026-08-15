@@ -1,29 +1,95 @@
-name: Download Song
+name: 🎵 Download Song (Pro)
 
 on:
   workflow_dispatch:
     inputs:
       song_name:
-        description: 'Name of the song to download (e.g. Harvester of Sorrow)'
+        description: '🎵 نام آهنگ (مثال: Metallica Harvester of Sorrow)'
         required: true
         default: 'Harvester of Sorrow'
         type: string
 
 jobs:
   download:
+    name: "📥 Fetch Audio"
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+
     steps:
-      - name: Install Dependencies
+      - name: Start Cloudflare WARP (Anti-Block)
+        run: |
+          echo "Starting Cloudflare WARP container..."
+          docker network create warp-net || true
+          docker run -d \
+            --name warp \
+            --restart=always \
+            --network warp-net \
+            -p 1080:1080 \
+            --cap-add NET_ADMIN \
+            --sysctl net.ipv6.conf.all.disable_ipv6=0 \
+            --sysctl net.ipv4.conf.all.src_valid_mark=1 \
+            caomingjun/warp
+          echo "Waiting for WARP to initialize..."
+          sleep 15
+          for i in {1..5}; do
+            if curl -s --max-time 5 --socks5-hostname 127.0.0.1:1080 https://cloudflare.com/cdn-cgi/trace | grep -qE "warp=(on|plus)"; then
+              echo "✅ WARP Proxy Active!"
+              break
+            fi
+            echo "Waiting..."
+            sleep 5
+          done
+
+      - name: Install Deno & yt-dlp
         run: |
           sudo apt-get update
-          sudo apt-get install -y ffmpeg
-          sudo curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp
-          sudo chmod a+rx /usr/local/bin/yt-dlp
+          sudo apt-get install -y python3-pip ffmpeg curl
+          
+          # نصب Deno برای رفع خطای جاوا اسکریپت یوتیوب
+          curl -fsSL https://deno.land/install.sh | sh
+          echo "$HOME/.deno/bin" >> $GITHUB_PATH
+          
+          # نصب آخرین نسخه yt-dlp از طریق pip
+          pip3 install --upgrade yt-dlp
 
-      - name: Download Audio
+      - name: Download Audio (Advanced Methods)
         run: |
           mkdir downloaded_song
-          yt-dlp -x --audio-format mp3 "ytsearch1:${{ github.event.inputs.song_name }} audio" -o "downloaded_song/%(title)s.%(ext)s"
+          export PATH="$HOME/.deno/bin:$PATH"
+
+          SEARCH="ytsearch1:${{ github.event.inputs.song_name }} audio"
+          FLAGS="--extract-audio --audio-format mp3 --audio-quality 0 --no-cache-dir -o downloaded_song/%(title)s.%(ext)s --no-playlist"
+
+          SUCCESS=false
+          
+          # تست متدهای مختلف دانلود به ترتیب (با و بدون پروکسی، کلاینت‌های مختلف)
+          for METHOD in 1 2 3 4; do
+            echo "Trying download method $METHOD..."
+            case $METHOD in
+              1) yt-dlp --proxy "socks5://127.0.0.1:1080" $FLAGS --extractor-args "youtube:player_client=web" --js-runtimes deno --remote-components ejs:github "$SEARCH" && SUCCESS=true ;;
+              2) yt-dlp --proxy "socks5://127.0.0.1:1080" $FLAGS --extractor-args "youtube:player_client=android_vr" --js-runtimes deno "$SEARCH" && SUCCESS=true ;;
+              3) yt-dlp $FLAGS --extractor-args "youtube:player_client=mweb" --js-runtimes deno "$SEARCH" && SUCCESS=true ;;
+              4) yt-dlp $FLAGS --extractor-args "youtube:player_client=web" --js-runtimes deno "$SEARCH" && SUCCESS=true ;;
+            esac
+
+            if [ "$SUCCESS" = true ]; then
+              echo "✅ Download successful with method $METHOD!"
+              break
+            fi
+            echo "❌ Method $METHOD failed. Retrying next method..."
+            sleep 3
+          done
+
+          if [ "$SUCCESS" = false ]; then
+            echo "❌ All download methods failed."
+            exit 1
+          fi
+
+      - name: Stop WARP
+        if: always()
+        run: |
+          docker stop warp || true
+          docker rm warp || true
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
