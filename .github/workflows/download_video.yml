@@ -57,13 +57,10 @@ jobs:
             caomingjun/warp
           sleep 10
 
-      - name: Fast Setup (Impersonation Libs + Master yt-dlp)
+      - name: Fast Setup (Stable Binaries)
         run: |
-          curl -fsSL https://deno.land/install.sh | sh
-          echo "$HOME/.deno/bin" >> $GITHUB_PATH
-          
-          # نصب مستقیم باینری yt-dlp همراه با افزونه‌های از پیش کامپایل‌شده‌ی impersonation
-          sudo wget -q https://github.com/yt-dlp/yt-dlp/releases/download/nightly/yt-dlp -O /usr/local/bin/yt-dlp
+          # Use official release for yt-dlp to avoid exit code 8 from Nightly 404s
+          sudo curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp
           sudo chmod a+rx /usr/local/bin/yt-dlp
 
       - name: Download Video (Private Site Optimized)
@@ -95,7 +92,6 @@ jobs:
           
           echo "=========================================================="
           echo "▶️ Method 1: Direct Mode (Best for Private Sites)..."
-          # از اونجا که سرور اوبونتو 24 گیت‌هاب نمیتونه curl_cffi رو درست ایمپورت کنه، از ایمپرسونیت داخلی خود yt-dlp استفاده میکنیم
           if yt-dlp --format "$FORMAT" --merge-output-format mp4 --restrict-filenames --no-playlist -o "downloaded_video/%(title)s.%(ext)s" --no-check-certificates --user-agent "$SPOOF_UA" --referer "$URL" ${COOKIE_FLAG:+--cookies cookies.txt} "$URL"; then
             SUCCESS=true
           else
@@ -133,6 +129,8 @@ jobs:
           fi
           
           echo "🔒 Encrypting file with AES-256..."
+          # Installing 7z manually just in case it's missing
+          sudo apt-get update -qq && sudo apt-get install -y -qq p7zip-full
           7z a -p"$PASS" -mhe=on downloaded_video/Secure_Video.7z "$FILE_PATH"
           
           shred -u "$FILE_PATH" || rm -f "$FILE_PATH"
