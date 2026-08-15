@@ -1,4 +1,4 @@
-name: 🎬 Download Video (Ultimate Header Spoofing)
+name: 🎬 Download Video (Nightly Binary)
 
 on:
   workflow_dispatch:
@@ -57,22 +57,24 @@ jobs:
             caomingjun/warp
           sleep 5
 
-      - name: Setup yt-dlp binary (Official Release)
+      - name: Setup yt-dlp binary (Nightly Release)
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq ffmpeg p7zip-full jq
-          sudo wget -q https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -O /usr/local/bin/yt-dlp
+          sudo wget -q https://github.com/yt-dlp/yt-dlp-nightly-builds/releases/latest/download/yt-dlp_linux -O /usr/local/bin/yt-dlp
           sudo chmod a+rx /usr/local/bin/yt-dlp
 
-      - name: Download Video (Header Injection)
+      - name: Download Video (Impersonation via Bundle)
         run: |
           mkdir -p downloaded_video
           
           if [ -n "$COOKIES_TXT" ]; then
             echo "$COOKIES_TXT" > cookies.txt
             sed -i 's/\r$//' cookies.txt
+            COOKIE_CMD="--cookies cookies.txt"
             echo "🍪 Cookies loaded for Private Site authentication!"
           else
+            COOKIE_CMD=""
             touch cookies.txt
           fi
           
@@ -87,10 +89,9 @@ jobs:
           SUCCESS=false
           
           echo "=========================================================="
-          echo "▶️ Method 1: Ultimate Browser Spoofing (Header Injection)..."
+          echo "▶️ Method 1: Nightly Binary Impersonation..."
           
           set +e
-          # Avoid eval and use standard bash array for arguments
           ARGS=(
             "--format" "$FORMAT"
             "--merge-output-format" "mp4"
@@ -98,11 +99,7 @@ jobs:
             "--no-playlist"
             "-o" "downloaded_video/%(title)s.%(ext)s"
             "--no-check-certificates"
-            "--user-agent" "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-            "--add-header" "Sec-Ch-Ua: \"Chromium\";v=\"124\", \"Google Chrome\";v=\"124\""
-            "--add-header" "Sec-Ch-Ua-Mobile: ?0"
-            "--add-header" "Sec-Ch-Ua-Platform: \"Windows\""
-            "--add-header" "Accept-Language: en-US,en;q=0.9"
+            "--impersonate" "chrome"
             "--referer" "$VIDEO_URL"
           )
           
@@ -118,7 +115,7 @@ jobs:
             SUCCESS=true
           else
             echo "=========================================================="
-            echo "▶️ Method 2: Cloudflare WARP Proxy + Spoofing..."
+            echo "▶️ Method 2: Cloudflare WARP Proxy..."
             
             PROXY_ARGS=(
               "--proxy" "socks5://127.0.0.1:1080"
