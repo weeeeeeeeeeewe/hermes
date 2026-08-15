@@ -59,17 +59,24 @@ jobs:
 
       - name: Fast Setup (Install yt-dlp + curl_cffi for Impersonation)
         run: |
-          # Use reliable package managers without aggressive upgrade commands that break pip
           sudo apt-get update -qq
           sudo apt-get install -y -qq python3-pip python3-dev gcc g++ build-essential libffi-dev ffmpeg p7zip-full
           
-          # Install curl_cffi for Chrome impersonation directly using pip3
-          pip3 install curl_cffi requests urllib3
-          # Install yt-dlp from master to ensure anti-bot fixes are present
-          pip3 install git+https://github.com/yt-dlp/yt-dlp.git
+          # Force use of a virtualenv to avoid PEP 668 internally managed errors on Ubuntu
+          python3 -m venv venv
+          source venv/bin/activate
+          
+          pip install curl_cffi requests urllib3
+          pip install git+https://github.com/yt-dlp/yt-dlp.git
+          
+          # Make yt-dlp available globally
+          sudo cp venv/bin/yt-dlp /usr/local/bin/
+          # Ensure it can find the venv libraries
+          sudo sed -i '1s|.*|#!/usr/bin/env python3|' /usr/local/bin/yt-dlp
 
       - name: Download Video (Private Site Optimized)
         run: |
+          source venv/bin/activate
           mkdir -p downloaded_video
           
           if [ -n "$COOKIES_TXT" ]; then
