@@ -4,11 +4,11 @@ on:
   workflow_dispatch:
     inputs:
       video_url:
-        description: '🔗 لینک صفحه یا ویدیو'
+        description: '🔗 Video Link'
         required: true
         type: string
       quality:
-        description: '🎬 کیفیت ویدیو'
+        description: '🎬 Quality'
         required: false
         default: 'best'
         type: choice
@@ -22,11 +22,11 @@ on:
           - 144
           - worst
       password:
-        description: '🔒 رمز عبور فایل (اگر خالی بگذارید، رمز تصادفی ساخته می‌شود)'
+        description: '🔒 Password'
         required: false
         type: string
       cookies:
-        description: '🍪 کوکی (اختیاری - محتویات فایل cookies.txt را اینجا Paste کنید)'
+        description: '🍪 Cookies.txt'
         required: false
         type: string
 
@@ -126,12 +126,11 @@ jobs:
               SUCCESS=true
             else
               echo "=========================================================="
-              echo "▶️ Method 3: Python Header Injection (Hard Bypass)..."
+              echo "▶️ Method 3: Python API Injection..."
               # Create python runner
               cat << 'EOF' > run_bypass.py
 import subprocess
 import sys
-
 url = sys.argv[1]
 cmd = [
     "yt-dlp",
@@ -140,22 +139,11 @@ cmd = [
     "-o", "downloaded_video/%(title)s.%(ext)s",
     "--no-check-certificates",
     "--add-header", "User-Agent:Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-    "--add-header", "Accept-Language:en-US,en;q=0.9",
-    "--add-header", "Sec-Ch-Ua:"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"",
-    "--add-header", "Sec-Ch-Ua-Mobile:?0",
-    "--add-header", "Sec-Ch-Ua-Platform:"Windows"",
-    "--add-header", "Sec-Fetch-Dest:document",
-    "--add-header", "Sec-Fetch-Mode:navigate",
-    "--add-header", "Sec-Fetch-Site:none",
-    "--add-header", "Sec-Fetch-User:?1",
-    "--add-header", "Upgrade-Insecure-Requests:1",
-    "--add-header", "Priority:u=0, i",
     url
 ]
 if sys.argv[2] == 'true':
     cmd.insert(1, "--cookies")
     cmd.insert(2, "cookies.txt")
-
 subprocess.run(cmd)
 EOF
               HAS_COOKIES="false"
