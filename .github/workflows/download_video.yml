@@ -48,11 +48,9 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y python3-pip ffmpeg curl jq
           
-          # نصب Deno برای رفع خطاهای جاوااسکریپت سایت‌ها (مخصوصا یوتیوب)
           curl -fsSL https://deno.land/install.sh | sh
           echo "$HOME/.deno/bin" >> $GITHUB_PATH
           
-          # نسخه Master برای بیشترین پایداری
           pip3 install --upgrade git+https://github.com/yt-dlp/yt-dlp.git
 
       - name: Download Video (Ultimate Reliability)
@@ -63,7 +61,6 @@ jobs:
           URL="${{ github.event.inputs.video_url }}"
           QUAL="${{ github.event.inputs.quality }}"
           
-          # تنظیم دقیق کیفیت بر اساس انتخاب کاربر (از بهترین تا پایین‌ترین)
           if [ "$QUAL" = "best" ]; then
             FORMAT="bestvideo+bestaudio/best"
           elif [ "$QUAL" = "worst" ]; then
@@ -79,13 +76,11 @@ jobs:
           
           SUCCESS=false
           
-          # روش اول: استفاده از کلاینت اندروید + پروکسی WARP (بیشترین احتمال موفقیت)
           echo "▶️ Trying Method 1 (Android Client + WARP)..."
           if yt-dlp --proxy "socks5://127.0.0.1:1080" $FLAGS --extractor-args "youtube:player_client=android" "$URL"; then
             SUCCESS=true
           fi
           
-          # روش دوم: استفاده از Deno + پروکسی WARP (اگه سایت ضد ربات قوی داشت)
           if [ "$SUCCESS" = false ]; then
             echo "▶️ Trying Method 2 (Web Client + Deno + WARP)..."
             if yt-dlp --proxy "socks5://127.0.0.1:1080" $FLAGS --extractor-args "youtube:player_client=web" --js-runtimes deno "$URL"; then
@@ -93,7 +88,6 @@ jobs:
             fi
           fi
           
-          # روش سوم: دایرکت (بدون پروکسی) - برای سایت‌هایی که پروکسی‌ها رو بلاک می‌کنن (مثل بعضی سایت‌های ایرانی)
           if [ "$SUCCESS" = false ]; then
             echo "▶️ Trying Method 3 (Direct / No Proxy)..."
             if yt-dlp $FLAGS "$URL"; then
@@ -106,36 +100,59 @@ jobs:
             exit 1
           fi
 
-      - name: Upload to Ephemeral Storage (Auto-Delete)
+      - name: Upload to Ephemeral Storage (GoFile & File.io)
         run: |
-          FILE_PATH=$(ls downloaded_video/* | head -n 1)
+          FILE_PATH=$(find downloaded_video -type f | head -n 1)
           if [ -z "$FILE_PATH" ]; then
             echo "❌ No file found to upload!"
             exit 1
           fi
           
-          FILENAME=$(basename "$FILE_PATH")
-          echo "📤 Uploading $FILENAME to temp storage..."
+          echo "📤 File found: $FILE_PATH"
           
-          # اولویت ۱: transfer.sh (انفجار بعد از ۱ بار دانلود)
-          LINK=$(curl -s -H "Max-Downloads: 1" -H "Max-Days: 1" --upload-file "$FILE_PATH" "https://transfer.sh/$FILENAME")
+          # ---- 1st Attempt: file.io (Extremely reliable for < 100MB, auto-deletes after 1 download) ----
+          echo "▶️ Trying File.io..."
+          FILEIO_RESP=$(curl -s -F "file=@$FILE_PATH" https://file.io)
+          FILEIO_LINK=$(echo "$FILEIO_RESP" | jq -r '.link' 2>/dev/null)
           
-          if [[ "$LINK" == http* ]]; then
+          if [ -n "$FILEIO_LINK" ] && [ "$FILEIO_LINK" != "null" ]; then
             echo "=========================================================="
-            echo "✅ TRANSFER.SH LINK: $LINK"
-            echo "⚠️ این لینک بعد از [یک بار دانلود] به صورت خودکار برای همیشه پاک می‌شود!"
+            echo "✅ FILE.IO LINK: $FILEIO_LINK"
+            echo "⚠️ This link will SELF-DESTRUCT after EXACTLY ONE download!"
             echo "=========================================================="
           else
-            # اولویت ۲: bashupload (در صورت قطعی سرور اول)
-            echo "transfer.sh failed or was slow, trying bashupload..."
-            BASH_LINK=$(curl -s -T "$FILE_PATH" https://bashupload.com/$FILENAME | grep -oP 'https://bashupload.com/[^\s]+' | head -n 1)
-            echo "=========================================================="
-            echo "✅ BASHUPLOAD LINK: $BASH_LINK"
-            echo "⚠️ این سرور جایگزین است. ویدیو به صورت خودکار منقضی می‌شود."
-            echo "=========================================================="
+            echo "⚠️ File.io failed. Response was: $FILEIO_RESP"
+            
+            # ---- 2nd Attempt: GoFile.io (Extremely reliable for ANY file size, no limits) ----
+            echo "▶️ Trying GoFile.io..."
+            # GoFile requires you to get the best server first
+            SERVER=$(curl -s https://api.gofile.io/servers | jq -r '.data.servers[0].name' 2>/dev/null)
+            
+            if [ -n "$SERVER" ] && [ "$SERVER" != "null" ]; then
+              GOFILE_RESP=$(curl -s -F "file=@$FILE_PATH" "https://${SERVER}.gofile.io/contents/uploadfile")
+              GOFILE_LINK=$(echo "$GOFILE_RESP" | jq -r '.data.downloadPage' 2>/dev/null)
+              
+              if [ -n "$GOFILE_LINK" ] && [ "$GOFILE_LINK" != "null" ]; then
+                echo "=========================================================="
+                echo "✅ GOFILE LINK: $GOFILE_LINK"
+                echo "⚠️ GoFile automatically deletes files after inactivity."
+                echo "=========================================================="
+              else
+                echo "⚠️ GoFile upload failed. Response was: $GOFILE_RESP"
+                
+                # ---- 3rd Attempt: BashUpload (Fallback) ----
+                echo "▶️ Trying BashUpload..."
+                BASH_LINK=$(curl -s -T "$FILE_PATH" https://bashupload.com/ | grep -oP 'https://bashupload.com/[^\s]+' | head -n 1)
+                echo "=========================================================="
+                echo "✅ BASHUPLOAD LINK: $BASH_LINK"
+                echo "=========================================================="
+              fi
+            else
+              echo "❌ Failed to fetch GoFile server."
+              exit 1
+            fi
           fi
           
-          # پاک کردن کامل فایل از روی سرور گیت‌هاب با shred (غیرقابل ریکاوری)
           echo "🧹 Securely shredding the file from GitHub server..."
           shred -u "$FILE_PATH" || rm -f "$FILE_PATH"
 
