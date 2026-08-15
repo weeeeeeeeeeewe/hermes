@@ -1,4 +1,4 @@
-name: 🎬 Download Video (Ultra Reliable + AES-256 Encrypted)
+name: 🎬 Download Video (Ultra Fast + Cookies Fix)
 
 on:
   workflow_dispatch:
@@ -26,7 +26,7 @@ on:
         required: false
         type: string
       cookies:
-        description: '🍪 کوکی (اختیاری - برای دانلود ویدیوهای پرایوت، اینستاگرام، یا دارای محدودیت سنی)'
+        description: '🍪 کوکی (اختیاری - محتویات فایل cookies.txt را اینجا Paste کنید)'
         required: false
         type: string
 
@@ -43,7 +43,7 @@ jobs:
       COOKIES_TXT: ${{ github.event.inputs.cookies }}
 
     steps:
-      - name: Start Cloudflare WARP (Anti-Block)
+      - name: Start Cloudflare WARP
         run: |
           docker network create warp-net || true
           docker run -d \
@@ -55,17 +55,18 @@ jobs:
             --sysctl net.ipv6.conf.all.disable_ipv6=0 \
             --sysctl net.ipv4.conf.all.src_valid_mark=1 \
             caomingjun/warp
-          sleep 15
+          # اجرای سریع‌تر، منتظر ماندن کمتر
+          sleep 10
 
-      - name: Install Dependencies
+      - name: Fast Setup (Pre-installed Tools + Nightly Binaries)
         run: |
-          sudo apt-get update
-          sudo apt-get install -y python3-pip ffmpeg curl jq p7zip-full
-          
+          # Deno is super fast to install
           curl -fsSL https://deno.land/install.sh | sh
           echo "$HOME/.deno/bin" >> $GITHUB_PATH
           
-          pip3 install --upgrade git+https://github.com/yt-dlp/yt-dlp.git
+          # Download yt-dlp Nightly directly (Takes 1-2 seconds, acts like cache)
+          sudo wget -q https://github.com/yt-dlp/yt-dlp/releases/download/nightly/yt-dlp -O /usr/local/bin/yt-dlp
+          sudo chmod a+rx /usr/local/bin/yt-dlp
 
       - name: Download Video
         run: |
@@ -75,11 +76,13 @@ jobs:
           URL="$VIDEO_URL"
           QUAL="$QUALITY"
           
-          # ساخت فایل کوکی در صورت وجود
+          # Fix Cookies Windows Newline Bug
           if [ -n "$COOKIES_TXT" ]; then
             echo "$COOKIES_TXT" > cookies.txt
+            # Remove carriage returns that break Linux tools
+            sed -i 's/$//' cookies.txt
             COOKIE_FLAG="--cookies cookies.txt"
-            echo "🍪 Cookies loaded for authentication!"
+            echo "🍪 Cookies perfectly loaded & sanitized!"
           else
             COOKIE_FLAG=""
           fi
@@ -97,30 +100,24 @@ jobs:
           SUCCESS=false
           
           echo "=========================================================="
-          echo "▶️ Trying Method 1 (Android Client + WARP - Best for YT)..."
-          if yt-dlp --proxy "socks5://127.0.0.1:1080" $FLAGS --extractor-args "youtube:player_client=android" "$URL"; then
+          echo "▶️ Method 1: TV Client (Best for bypassing Captchas/Bots)..."
+          if yt-dlp $FLAGS --extractor-args "youtube:player_client=tv" "$URL"; then
             SUCCESS=true
           else
             echo "=========================================================="
-            echo "▶️ Trying Method 2 (Web Client + Deno + WARP)..."
-            if yt-dlp --proxy "socks5://127.0.0.1:1080" $FLAGS --extractor-args "youtube:player_client=web" --js-runtimes deno "$URL"; then
+            echo "▶️ Method 2: Android Client + WARP..."
+            if yt-dlp --proxy "socks5://127.0.0.1:1080" $FLAGS --extractor-args "youtube:player_client=android" "$URL"; then
               SUCCESS=true
             else
               echo "=========================================================="
-              echo "▶️ Trying Method 3 (Generic Site + WARP - Good for Twitter/TikTok)..."
-              if yt-dlp --proxy "socks5://127.0.0.1:1080" $FLAGS "$URL"; then
+              echo "▶️ Method 3: Web Client + Deno + IPv6 Force..."
+              if yt-dlp $FLAGS --extractor-args "youtube:player_client=web" --js-runtimes deno --force-ipv6 "$URL"; then
                 SUCCESS=true
               else
                 echo "=========================================================="
-                echo "▶️ Trying Method 4 (Direct / No Proxy - Good for IG/Local sites)..."
+                echo "▶️ Method 4: Direct Mode (Generic)..."
                 if yt-dlp $FLAGS "$URL"; then
                   SUCCESS=true
-                else
-                  echo "=========================================================="
-                  echo "▶️ Trying Method 5 (Direct + Geo Bypass)..."
-                  if yt-dlp $FLAGS --geo-bypass "$URL"; then
-                    SUCCESS=true
-                  fi
                 fi
               fi
             fi
@@ -128,8 +125,6 @@ jobs:
           
           if [ "$SUCCESS" = false ]; then
             echo "❌ All download methods failed."
-            echo "💡 دلیل احتمالی: ویدیو پرایوت (Private) است، محدودیت سنی دارد، یا نیاز به لاگین دارد (مثل اینستاگرام)."
-            echo "👈 راه‌حل: فایل کوکی (cookies.txt) مرورگر خود را استخراج کرده و در فیلد cookies قرار دهید."
             exit 1
           fi
 
@@ -151,9 +146,7 @@ jobs:
           echo "🔒 Encrypting file with AES-256..."
           7z a -p"$PASS" -mhe=on downloaded_video/Secure_Video.7z "$FILE_PATH"
           
-          echo "🧹 Shredding original unencrypted video..."
           shred -u "$FILE_PATH" || rm -f "$FILE_PATH"
-          
           echo "password=$PASS" >> $GITHUB_OUTPUT
 
       - name: Upload to Ephemeral Storage
@@ -187,7 +180,7 @@ jobs:
                 echo "✅ BASHUPLOAD LINK: $BASH_LINK"
               fi
             else
-              echo "▶️ Trying BashUpload (GoFile Servers Down)..."
+              echo "▶️ Trying BashUpload..."
               BASH_LINK=$(curl -s -T "$FILE_PATH" https://bashupload.com/ | grep -oP 'https://bashupload.com/[^\s]+' | head -n 1 || echo "")
               echo "=========================================================="
               echo "✅ BASHUPLOAD LINK: $BASH_LINK"
@@ -207,3 +200,4 @@ jobs:
           docker stop warp || true
           docker rm warp || true
           rm -rf downloaded_video/
+          rm -f cookies.txt
