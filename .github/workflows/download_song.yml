@@ -35,32 +35,31 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y python3-pip ffmpeg curl
           
-          # Deno for JS execution
           curl -fsSL https://deno.land/install.sh | sh
           echo "$HOME/.deno/bin" >> $GITHUB_PATH
           
-          # Install the bleeding-edge version of yt-dlp to bypass bot protection
           pip3 install --upgrade git+https://github.com/yt-dlp/yt-dlp.git
 
-      - name: Download Audio (Ultimate Fallback Methods)
+      - name: Download Audio
         run: |
-          mkdir downloaded_song
+          mkdir -p downloaded_song
           export PATH="$HOME/.deno/bin:$PATH"
 
           SEARCH="ytsearch1:${{ github.event.inputs.song_name }} audio"
           SC_SEARCH="scsearch1:${{ github.event.inputs.song_name }}"
-          FLAGS="--extract-audio --audio-format mp3 --audio-quality 0 --no-cache-dir -o downloaded_song/%(title)s.%(ext)s --no-playlist --no-check-certificates"
+          # Added restrict-filenames and changed output path to be safe
+          FLAGS="--extract-audio --audio-format mp3 --audio-quality 0 --restrict-filenames --no-cache-dir -o downloaded_song/%(title)s.%(ext)s --no-playlist --no-check-certificates"
 
           SUCCESS=false
           
-          # Methods inspired by fasttube.yml
+          # Priority 1 is now the Android client (previously Method 3)
           for METHOD in 1 2 3 4 5 6 7 8 9; do
             echo "====================================="
             echo "Trying download method $METHOD..."
             case $METHOD in
-              1) yt-dlp --proxy "socks5://127.0.0.1:1080" $FLAGS --extractor-args "youtube:player_client=web" --js-runtimes deno --remote-components ejs:github --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36" --add-header "Accept-Language:en-US,en;q=0.9" "$SEARCH" && SUCCESS=true ;;
-              2) yt-dlp --proxy "socks5://127.0.0.1:1080" $FLAGS --extractor-args "youtube:player_client=web" --js-runtimes deno --remote-components ejs:npm --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36" --add-header "Accept-Language:en-US,en;q=0.9" "$SEARCH" && SUCCESS=true ;;
-              3) yt-dlp --proxy "socks5://127.0.0.1:1080" $FLAGS --extractor-args "youtube:player_client=android" --user-agent "Mozilla/5.0 (Linux; Android 12; SM-S906N Build/QP1A.190711.020) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/112.0.0.0 Mobile Safari/537.36" "$SEARCH" && SUCCESS=true ;;
+              1) yt-dlp --proxy "socks5://127.0.0.1:1080" $FLAGS --extractor-args "youtube:player_client=android" --user-agent "Mozilla/5.0 (Linux; Android 12; SM-S906N Build/QP1A.190711.020) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/112.0.0.0 Mobile Safari/537.36" "$SEARCH" && SUCCESS=true ;;
+              2) yt-dlp --proxy "socks5://127.0.0.1:1080" $FLAGS --extractor-args "youtube:player_client=web" --js-runtimes deno --remote-components ejs:github --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36" --add-header "Accept-Language:en-US,en;q=0.9" "$SEARCH" && SUCCESS=true ;;
+              3) yt-dlp --proxy "socks5://127.0.0.1:1080" $FLAGS --extractor-args "youtube:player_client=web" --js-runtimes deno --remote-components ejs:npm --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36" --add-header "Accept-Language:en-US,en;q=0.9" "$SEARCH" && SUCCESS=true ;;
               4) yt-dlp --proxy "socks5://127.0.0.1:1080" $FLAGS --extractor-args "youtube:player_client=web,mweb,android_vr" --js-runtimes deno --remote-components ejs:github "$SEARCH" && SUCCESS=true ;;
               5) yt-dlp --proxy "socks5://127.0.0.1:1080" $FLAGS --extractor-args "youtube:player_client=mweb" "$SEARCH" && SUCCESS=true ;;
               6) yt-dlp $FLAGS --extractor-args "youtube:player_client=android" "$SEARCH" && SUCCESS=true ;;
@@ -71,8 +70,15 @@ jobs:
             esac
 
             if [ "$SUCCESS" = true ]; then
-              echo "✅ Download successful with method $METHOD!"
-              break
+              FILE_COUNT=$(ls -1q downloaded_song/ 2>/dev/null | wc -l)
+              if [ "$FILE_COUNT" -gt 0 ]; then
+                echo "✅ Download successful with method $METHOD and file exists!"
+                ls -lh downloaded_song/
+                break
+              else
+                echo "⚠️ Method $METHOD returned success, but no file found! Retrying next method..."
+                SUCCESS=false
+              fi
             fi
             sleep 2
           done
@@ -92,5 +98,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: downloaded-song
-          path: downloaded_song/*.mp3
+          path: downloaded_song/*
           retention-days: 5
