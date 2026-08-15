@@ -1,0 +1,95 @@
+name: 🎬 Download Video (Universal)
+
+on:
+  workflow_dispatch:
+    inputs:
+      video_url:
+        description: '🔗 لینک صفحه یا ویدیو (پشتیبانی از ۱۰۰۰+ سایت)'
+        required: true
+        type: string
+      quality:
+        description: '🎬 کیفیت ویدیو (پیش‌فرض: بهترین کیفیت)'
+        required: false
+        default: 'best'
+        type: choice
+        options:
+          - best
+          - 1080
+          - 720
+          - 480
+
+jobs:
+  download:
+    name: "📥 Fetch Video"
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Start Cloudflare WARP (Anti-Block)
+        run: |
+          docker network create warp-net || true
+          docker run -d \
+            --name warp \
+            --restart=always \
+            --network warp-net \
+            -p 1080:1080 \
+            --cap-add NET_ADMIN \
+            --sysctl net.ipv6.conf.all.disable_ipv6=0 \
+            --sysctl net.ipv4.conf.all.src_valid_mark=1 \
+            caomingjun/warp
+          sleep 15
+
+      - name: Install Dependencies & yt-dlp
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-pip ffmpeg curl
+          pip3 install --upgrade git+https://github.com/yt-dlp/yt-dlp.git
+
+      - name: Download Video
+        run: |
+          mkdir -p downloaded_video
+          URL="${{ github.event.inputs.video_url }}"
+          QUAL="${{ github.event.inputs.quality }}"
+          
+          if [ "$QUAL" = "best" ]; then
+            FORMAT="bestvideo+bestaudio/best"
+          else
+            FORMAT="bestvideo[height<=$QUAL]+bestaudio/best[height<=$QUAL]/best"
+          fi
+
+          echo "Target URL: $URL"
+          echo "Target Quality: $QUAL"
+
+          # First try with WARP Proxy (Good for Twitter, YT, etc.)
+          if yt-dlp --proxy "socks5://127.0.0.1:1080" \
+            --format "$FORMAT" \
+            --merge-output-format mp4 \
+            --restrict-filenames \
+            --no-playlist \
+            -o "downloaded_video/%(title)s.%(ext)s" \
+            "$URL"; then
+              echo "✅ Downloaded successfully with WARP Proxy!"
+          else
+            echo "⚠️ Proxy download failed. Retrying without Proxy (Direct)..."
+            # Fallback without proxy (Good for sites blocking VPNs)
+            yt-dlp \
+              --format "$FORMAT" \
+              --merge-output-format mp4 \
+              --restrict-filenames \
+              --no-playlist \
+              -o "downloaded_video/%(title)s.%(ext)s" \
+              "$URL"
+          fi
+
+      - name: Stop WARP
+        if: always()
+        run: |
+          docker stop warp || true
+          docker rm warp || true
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: downloaded-video
+          path: downloaded_video/*
+          retention-days: 5
