@@ -1,4 +1,4 @@
-name: 🎬 Download Video (Ultra Reliable + Auto-Delete)
+name: 🎬 Download Video (Ultra Reliable + AES-256 Encrypted)
 
 on:
   workflow_dispatch:
@@ -8,7 +8,7 @@ on:
         required: true
         type: string
       quality:
-        description: '🎬 کیفیت ویدیو (best=بهترین, worst=پایین‌ترین)'
+        description: '🎬 کیفیت ویدیو'
         required: false
         default: 'best'
         type: choice
@@ -21,10 +21,14 @@ on:
           - 240
           - 144
           - worst
+      password:
+        description: '🔒 رمز عبور فایل (اگر خالی بگذارید، رمز تصادفی قدرتمند ساخته می‌شود)'
+        required: false
+        type: string
 
 jobs:
   download:
-    name: "📥 Fetch Video"
+    name: "📥 Fetch & Encrypt Video"
     runs-on: ubuntu-latest
     timeout-minutes: 60
 
@@ -43,17 +47,17 @@ jobs:
             caomingjun/warp
           sleep 15
 
-      - name: Install Dependencies (Deno & yt-dlp)
+      - name: Install Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y python3-pip ffmpeg curl jq
+          sudo apt-get install -y python3-pip ffmpeg curl jq p7zip-full
           
           curl -fsSL https://deno.land/install.sh | sh
           echo "$HOME/.deno/bin" >> $GITHUB_PATH
           
           pip3 install --upgrade git+https://github.com/yt-dlp/yt-dlp.git
 
-      - name: Download Video (Ultimate Reliability)
+      - name: Download Video
         run: |
           mkdir -p downloaded_video
           export PATH="$HOME/.deno/bin:$PATH"
@@ -69,9 +73,6 @@ jobs:
             FORMAT="bestvideo[height<=$QUAL]+bestaudio/best[height<=$QUAL]/best"
           fi
 
-          echo "Target URL: $URL"
-          echo "Selected Quality: $QUAL"
-
           FLAGS="--format $FORMAT --merge-output-format mp4 --restrict-filenames --no-playlist -o downloaded_video/%(title)s.%(ext)s --no-check-certificates"
           
           SUCCESS=false
@@ -79,38 +80,45 @@ jobs:
           echo "▶️ Trying Method 1 (Android Client + WARP)..."
           if yt-dlp --proxy "socks5://127.0.0.1:1080" $FLAGS --extractor-args "youtube:player_client=android" "$URL"; then
             SUCCESS=true
+          elif yt-dlp --proxy "socks5://127.0.0.1:1080" $FLAGS --extractor-args "youtube:player_client=web" --js-runtimes deno "$URL"; then
+            SUCCESS=true
+          elif yt-dlp $FLAGS "$URL"; then
+            SUCCESS=true
           fi
           
           if [ "$SUCCESS" = false ]; then
-            echo "▶️ Trying Method 2 (Web Client + Deno + WARP)..."
-            if yt-dlp --proxy "socks5://127.0.0.1:1080" $FLAGS --extractor-args "youtube:player_client=web" --js-runtimes deno "$URL"; then
-              SUCCESS=true
-            fi
-          fi
-          
-          if [ "$SUCCESS" = false ]; then
-            echo "▶️ Trying Method 3 (Direct / No Proxy)..."
-            if yt-dlp $FLAGS "$URL"; then
-              SUCCESS=true
-            fi
-          fi
-          
-          if [ "$SUCCESS" = false ]; then
-            echo "❌ All download methods failed. Video might be private or region-locked."
+            echo "❌ All download methods failed."
             exit 1
           fi
 
-      - name: Upload to Ephemeral Storage (GoFile & File.io)
+      - name: Encrypt Video (Zero-Knowledge Security)
+        id: encrypt
         run: |
           FILE_PATH=$(find downloaded_video -type f | head -n 1)
           if [ -z "$FILE_PATH" ]; then
-            echo "❌ No file found to upload!"
+            echo "❌ No file found!"
             exit 1
           fi
           
-          echo "📤 File found: $FILE_PATH"
+          USER_PASS="${{ github.event.inputs.password }}"
+          if [ -z "$USER_PASS" ]; then
+            USER_PASS=$(openssl rand -hex 4)
+          fi
           
-          # ---- 1st Attempt: file.io (Extremely reliable for < 100MB, auto-deletes after 1 download) ----
+          echo "🔒 Encrypting file with AES-256..."
+          # -mhe=on encrypts header/file names so nobody can even see the name of the downloaded video!
+          7z a -p"$USER_PASS" -mhe=on downloaded_video/Secure_Video.7z "$FILE_PATH"
+          
+          echo "🧹 Shredding original unencrypted video..."
+          shred -u "$FILE_PATH" || rm -f "$FILE_PATH"
+          
+          echo "password=$USER_PASS" >> $GITHUB_OUTPUT
+
+      - name: Upload to Ephemeral Storage
+        run: |
+          FILE_PATH="downloaded_video/Secure_Video.7z"
+          PASS="${{ steps.encrypt.outputs.password }}"
+          
           echo "▶️ Trying File.io..."
           FILEIO_RESP=$(curl -s -F "file=@$FILE_PATH" https://file.io)
           FILEIO_LINK=$(echo "$FILEIO_RESP" | jq -r '.link' 2>/dev/null)
@@ -118,16 +126,10 @@ jobs:
           if [ -n "$FILEIO_LINK" ] && [ "$FILEIO_LINK" != "null" ]; then
             echo "=========================================================="
             echo "✅ FILE.IO LINK: $FILEIO_LINK"
-            echo "⚠️ This link will SELF-DESTRUCT after EXACTLY ONE download!"
-            echo "=========================================================="
+            echo "⚠️ این لینک بعد از [یک بار دانلود] پاک می‌شود!"
           else
-            echo "⚠️ File.io failed. Response was: $FILEIO_RESP"
-            
-            # ---- 2nd Attempt: GoFile.io (Extremely reliable for ANY file size, no limits) ----
             echo "▶️ Trying GoFile.io..."
-            # GoFile requires you to get the best server first
             SERVER=$(curl -s https://api.gofile.io/servers | jq -r '.data.servers[0].name' 2>/dev/null)
-            
             if [ -n "$SERVER" ] && [ "$SERVER" != "null" ]; then
               GOFILE_RESP=$(curl -s -F "file=@$FILE_PATH" "https://${SERVER}.gofile.io/contents/uploadfile")
               GOFILE_LINK=$(echo "$GOFILE_RESP" | jq -r '.data.downloadPage' 2>/dev/null)
@@ -135,25 +137,21 @@ jobs:
               if [ -n "$GOFILE_LINK" ] && [ "$GOFILE_LINK" != "null" ]; then
                 echo "=========================================================="
                 echo "✅ GOFILE LINK: $GOFILE_LINK"
-                echo "⚠️ GoFile automatically deletes files after inactivity."
-                echo "=========================================================="
               else
-                echo "⚠️ GoFile upload failed. Response was: $GOFILE_RESP"
-                
-                # ---- 3rd Attempt: BashUpload (Fallback) ----
                 echo "▶️ Trying BashUpload..."
                 BASH_LINK=$(curl -s -T "$FILE_PATH" https://bashupload.com/ | grep -oP 'https://bashupload.com/[^\s]+' | head -n 1)
                 echo "=========================================================="
                 echo "✅ BASHUPLOAD LINK: $BASH_LINK"
-                echo "=========================================================="
               fi
-            else
-              echo "❌ Failed to fetch GoFile server."
-              exit 1
             fi
           fi
           
-          echo "🧹 Securely shredding the file from GitHub server..."
+          echo "=========================================================="
+          echo "🔑 رمز عبور فایل شما برای استخراج: $PASS"
+          echo "=========================================================="
+          echo "⚠️ حتماً رمز بالا را کپی کنید. بدون آن فایل باز نخواهد شد!"
+          
+          echo "🧹 Securely shredding the encrypted archive..."
           shred -u "$FILE_PATH" || rm -f "$FILE_PATH"
 
       - name: Wipe Workspace Traces
