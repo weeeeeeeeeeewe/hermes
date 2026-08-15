@@ -59,20 +59,21 @@ jobs:
 
       - name: Fast Setup (Install yt-dlp + curl_cffi for Impersonation)
         run: |
+          sudo add-apt-repository -y ppa:deadsnakes/ppa
           sudo apt-get update -qq
-          sudo apt-get install -y -qq python3-pip python3-dev gcc g++ build-essential libffi-dev ffmpeg p7zip-full
+          sudo apt-get install -y -qq python3.11 python3.11-venv python3.11-dev gcc g++ build-essential libffi-dev ffmpeg p7zip-full
           
-          # Force use of a virtualenv to avoid PEP 668 internally managed errors on Ubuntu
-          python3 -m venv venv
+          python3.11 -m venv venv
           source venv/bin/activate
           
+          # Force binary wheel installation for curl_cffi to avoid C-compilation failures on older Pythons
+          pip install --upgrade pip
           pip install curl_cffi requests urllib3
           pip install git+https://github.com/yt-dlp/yt-dlp.git
           
-          # Make yt-dlp available globally
-          sudo cp venv/bin/yt-dlp /usr/local/bin/
-          # Ensure it can find the venv libraries
-          sudo sed -i '1s|.*|#!/usr/bin/env python3|' /usr/local/bin/yt-dlp
+          # Verify impersonation targets are loaded successfully!
+          echo "Checking if curl_cffi loaded successfully:"
+          yt-dlp --list-impersonate-targets || true
 
       - name: Download Video (Private Site Optimized)
         run: |
@@ -99,14 +100,16 @@ jobs:
           SPOOF_UA="Mozilla/5.0 Windows NT 10.0 Win64 x64 AppleWebKit/537.36 KHTML like Gecko Chrome/124.0.0.0 Safari/537.36"
           SUCCESS=false
           
+          # Using chrome110 as a safe fallback since "chrome" might default to a version not compiled
+          
           echo "=========================================================="
           echo "▶️ Method 1: Direct Mode (Best for Private Sites)..."
-          if yt-dlp --format "$FORMAT" --merge-output-format "mp4" --restrict-filenames --no-playlist -o "downloaded_video/%(title)s.%(ext)s" --no-check-certificates --user-agent "$SPOOF_UA" --referer "$VIDEO_URL" --impersonate "chrome" ${COOKIE_CMD} "$VIDEO_URL"; then
+          if yt-dlp --format "$FORMAT" --merge-output-format "mp4" --restrict-filenames --no-playlist -o "downloaded_video/%(title)s.%(ext)s" --no-check-certificates --user-agent "$SPOOF_UA" --referer "$VIDEO_URL" --impersonate "chrome110" ${COOKIE_CMD} "$VIDEO_URL"; then
             SUCCESS=true
           else
             echo "=========================================================="
             echo "▶️ Method 2: WARP Proxy (In case site blocks GitHub IPs)..."
-            if yt-dlp --proxy "socks5://127.0.0.1:1080" --format "$FORMAT" --merge-output-format "mp4" --restrict-filenames --no-playlist -o "downloaded_video/%(title)s.%(ext)s" --no-check-certificates --user-agent "$SPOOF_UA" --referer "$VIDEO_URL" --impersonate "chrome" ${COOKIE_CMD} "$VIDEO_URL"; then
+            if yt-dlp --proxy "socks5://127.0.0.1:1080" --format "$FORMAT" --merge-output-format "mp4" --restrict-filenames --no-playlist -o "downloaded_video/%(title)s.%(ext)s" --no-check-certificates --user-agent "$SPOOF_UA" --referer "$VIDEO_URL" --impersonate "chrome110" ${COOKIE_CMD} "$VIDEO_URL"; then
               SUCCESS=true
             else
               echo "=========================================================="
