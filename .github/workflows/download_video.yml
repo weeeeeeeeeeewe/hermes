@@ -1,14 +1,14 @@
-name: 🎬 Download Video (Universal)
+name: 🎬 Download Video (Cloudflare IP Bypass + Auto-Delete)
 
 on:
   workflow_dispatch:
     inputs:
       video_url:
-        description: '🔗 لینک صفحه یا ویدیو (پشتیبانی از ۱۰۰۰+ سایت)'
+        description: '🔗 لینک صفحه یا ویدیو'
         required: true
         type: string
       quality:
-        description: '🎬 کیفیت ویدیو (پیش‌فرض: بهترین کیفیت)'
+        description: '🎬 کیفیت ویدیو'
         required: false
         default: 'best'
         type: choice
@@ -25,7 +25,7 @@ jobs:
     timeout-minutes: 60
 
     steps:
-      - name: Start Cloudflare WARP (Anti-Block)
+      - name: Start Cloudflare WARP (IP Bypass)
         run: |
           docker network create warp-net || true
           docker run -d \
@@ -39,10 +39,10 @@ jobs:
             caomingjun/warp
           sleep 15
 
-      - name: Install Dependencies & yt-dlp
+      - name: Install Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y python3-pip ffmpeg curl
+          sudo apt-get install -y python3-pip ffmpeg curl jq
           pip3 install --upgrade git+https://github.com/yt-dlp/yt-dlp.git
 
       - name: Download Video
@@ -58,38 +58,52 @@ jobs:
           fi
 
           echo "Target URL: $URL"
-          echo "Target Quality: $QUAL"
-
-          # First try with WARP Proxy (Good for Twitter, YT, etc.)
-          if yt-dlp --proxy "socks5://127.0.0.1:1080" \
+          
+          # Force yt-dlp to route through Cloudflare WARP SOCKS5 proxy to bypass IP bans
+          yt-dlp --proxy "socks5://127.0.0.1:1080" \
             --format "$FORMAT" \
             --merge-output-format mp4 \
             --restrict-filenames \
             --no-playlist \
             -o "downloaded_video/%(title)s.%(ext)s" \
-            "$URL"; then
-              echo "✅ Downloaded successfully with WARP Proxy!"
-          else
-            echo "⚠️ Proxy download failed. Retrying without Proxy (Direct)..."
-            # Fallback without proxy (Good for sites blocking VPNs)
-            yt-dlp \
-              --format "$FORMAT" \
-              --merge-output-format mp4 \
-              --restrict-filenames \
-              --no-playlist \
-              -o "downloaded_video/%(title)s.%(ext)s" \
-              "$URL"
-          fi
+            "$URL" || \
+          yt-dlp \
+            --format "$FORMAT" \
+            --merge-output-format mp4 \
+            --restrict-filenames \
+            --no-playlist \
+            -o "downloaded_video/%(title)s.%(ext)s" \
+            "$URL"
 
-      - name: Stop WARP
+      - name: Upload to Temporary Storage (Auto-Delete after 1 download)
+        run: |
+          FILE_PATH=$(ls downloaded_video/* | head -n 1)
+          if [ -z "$FILE_PATH" ]; then
+            echo "❌ No file found to upload!"
+            exit 1
+          fi
+          
+          FILENAME=$(basename "$FILE_PATH")
+          echo "📤 Uploading $FILENAME to temp storage..."
+          
+          # Use transfer.sh which allows setting a self-destruct mechanism
+          # Max-Downloads: 1 means as soon as you download it once, the file is destroyed on the server!
+          # Max-Days: 1 means if you don't download it, it deletes itself within 24 hours.
+          LINK=$(curl -s -H "Max-Downloads: 1" -H "Max-Days: 1" --upload-file "$FILE_PATH" "https://transfer.sh/$FILENAME")
+          
+          echo "=========================================================="
+          echo "✅ DOWNLOAD LINK: $LINK"
+          echo "⚠️ This link will SELF-DESTRUCT after ONE download!"
+          echo "=========================================================="
+          
+          # Securely wipe the file from the GitHub runner
+          shred -u "$FILE_PATH"
+
+      - name: Wipe Traces
         if: always()
         run: |
           docker stop warp || true
           docker rm warp || true
-
-      - name: Upload Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: downloaded-video
-          path: downloaded_video/*
-          retention-days: 5
+          rm -rf downloaded_video/
+          # Ensure workspace is completely clean
+          rm -rf $GITHUB_WORKSPACE/*
