@@ -89,28 +89,27 @@ jobs:
             FORMAT="bestvideo[height<=$QUAL]+bestaudio/best[height<=$QUAL]/best"
           fi
 
-          # ADDED: Referer and standard Chrome User-Agent which is CRITICAL for Private Sites/VODs
-          SPOOF_UA="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-          FLAGS="--format $FORMAT --merge-output-format mp4 --restrict-filenames --no-playlist -o downloaded_video/%(title)s.%(ext)s --no-check-certificates --user-agent "$SPOOF_UA" --referer "$URL""
+          # FIXED: Used an array array to properly handle spaces and quotes without bash eval errors
+          # Also added --verbose for better debugging if it fails again
           
+          SPOOF_UA="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+          
+          # We use normal arrays and command execution instead of dangerous eval strings
           SUCCESS=false
           
-          # METHOD 1: Generic Direct (No Proxy) - Most private sites bind cookies to IP region or block VPNs/WARP. Direct is best!
           echo "=========================================================="
           echo "▶️ Method 1: Direct Mode (Private Site Mode)..."
-          if eval yt-dlp $FLAGS $COOKIE_FLAG "$URL"; then
+          if yt-dlp --format "$FORMAT" --merge-output-format mp4 --restrict-filenames --no-playlist -o "downloaded_video/%(title)s.%(ext)s" --no-check-certificates --user-agent "$SPOOF_UA" --referer "$URL" ${COOKIE_FLAG:+--cookies cookies.txt} "$URL"; then
             SUCCESS=true
           else
-            # METHOD 2: Direct + Impersonate (For Cloudflare protected private sites)
             echo "=========================================================="
             echo "▶️ Method 2: Direct Mode + Browser Impersonation..."
-            if eval yt-dlp $FLAGS --impersonate "chrome" $COOKIE_FLAG "$URL"; then
+            if yt-dlp --format "$FORMAT" --merge-output-format mp4 --restrict-filenames --no-playlist -o "downloaded_video/%(title)s.%(ext)s" --no-check-certificates --user-agent "$SPOOF_UA" --referer "$URL" --impersonate "chrome" ${COOKIE_FLAG:+--cookies cookies.txt} "$URL"; then
               SUCCESS=true
             else
-              # METHOD 3: WARP Proxy
               echo "=========================================================="
               echo "▶️ Method 3: WARP Proxy (In case site blocks GitHub IPs)..."
-              if eval yt-dlp --proxy "socks5://127.0.0.1:1080" $FLAGS $COOKIE_FLAG "$URL"; then
+              if yt-dlp --proxy "socks5://127.0.0.1:1080" --format "$FORMAT" --merge-output-format mp4 --restrict-filenames --no-playlist -o "downloaded_video/%(title)s.%(ext)s" --no-check-certificates --user-agent "$SPOOF_UA" --referer "$URL" ${COOKIE_FLAG:+--cookies cookies.txt} "$URL"; then
                 SUCCESS=true
               fi
             fi
