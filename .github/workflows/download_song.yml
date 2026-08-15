@@ -1,4 +1,4 @@
-name: 🎵 Download Song (Pro)
+name: 🎵 Download Song (Pro Max)
 
 on:
   workflow_dispatch:
@@ -18,7 +18,6 @@ jobs:
     steps:
       - name: Start Cloudflare WARP (Anti-Block)
         run: |
-          echo "Starting Cloudflare WARP container..."
           docker network create warp-net || true
           docker run -d \
             --name warp \
@@ -29,55 +28,53 @@ jobs:
             --sysctl net.ipv6.conf.all.disable_ipv6=0 \
             --sysctl net.ipv4.conf.all.src_valid_mark=1 \
             caomingjun/warp
-          echo "Waiting for WARP to initialize..."
           sleep 15
-          for i in {1..5}; do
-            if curl -s --max-time 5 --socks5-hostname 127.0.0.1:1080 https://cloudflare.com/cdn-cgi/trace | grep -qE "warp=(on|plus)"; then
-              echo "✅ WARP Proxy Active!"
-              break
-            fi
-            echo "Waiting..."
-            sleep 5
-          done
 
-      - name: Install Deno & yt-dlp
+      - name: Install Deno & Latest yt-dlp (Nightly/Master)
         run: |
           sudo apt-get update
           sudo apt-get install -y python3-pip ffmpeg curl
           
-          # نصب Deno برای رفع خطای جاوا اسکریپت یوتیوب
+          # Deno for JS execution
           curl -fsSL https://deno.land/install.sh | sh
           echo "$HOME/.deno/bin" >> $GITHUB_PATH
           
-          # نصب آخرین نسخه yt-dlp از طریق pip
-          pip3 install --upgrade yt-dlp
+          # Install the bleeding-edge version of yt-dlp to bypass bot protection
+          pip3 install --upgrade git+https://github.com/yt-dlp/yt-dlp.git
 
-      - name: Download Audio (Advanced Methods)
+      - name: Download Audio (Ultimate Fallback Methods)
         run: |
           mkdir downloaded_song
           export PATH="$HOME/.deno/bin:$PATH"
 
           SEARCH="ytsearch1:${{ github.event.inputs.song_name }} audio"
-          FLAGS="--extract-audio --audio-format mp3 --audio-quality 0 --no-cache-dir -o downloaded_song/%(title)s.%(ext)s --no-playlist"
+          SC_SEARCH="scsearch1:${{ github.event.inputs.song_name }}"
+          FLAGS="--extract-audio --audio-format mp3 --audio-quality 0 --no-cache-dir -o downloaded_song/%(title)s.%(ext)s --no-playlist --no-check-certificates"
 
           SUCCESS=false
           
-          # تست متدهای مختلف دانلود به ترتیب (با و بدون پروکسی، کلاینت‌های مختلف)
-          for METHOD in 1 2 3 4; do
+          # Methods inspired by fasttube.yml
+          for METHOD in 1 2 3 4 5 6 7 8 9; do
+            echo "====================================="
             echo "Trying download method $METHOD..."
             case $METHOD in
-              1) yt-dlp --proxy "socks5://127.0.0.1:1080" $FLAGS --extractor-args "youtube:player_client=web" --js-runtimes deno --remote-components ejs:github "$SEARCH" && SUCCESS=true ;;
-              2) yt-dlp --proxy "socks5://127.0.0.1:1080" $FLAGS --extractor-args "youtube:player_client=android_vr" --js-runtimes deno "$SEARCH" && SUCCESS=true ;;
-              3) yt-dlp $FLAGS --extractor-args "youtube:player_client=mweb" --js-runtimes deno "$SEARCH" && SUCCESS=true ;;
-              4) yt-dlp $FLAGS --extractor-args "youtube:player_client=web" --js-runtimes deno "$SEARCH" && SUCCESS=true ;;
+              1) yt-dlp --proxy "socks5://127.0.0.1:1080" $FLAGS --extractor-args "youtube:player_client=web" --js-runtimes deno --remote-components ejs:github --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36" --add-header "Accept-Language:en-US,en;q=0.9" "$SEARCH" && SUCCESS=true ;;
+              2) yt-dlp --proxy "socks5://127.0.0.1:1080" $FLAGS --extractor-args "youtube:player_client=web" --js-runtimes deno --remote-components ejs:npm --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36" --add-header "Accept-Language:en-US,en;q=0.9" "$SEARCH" && SUCCESS=true ;;
+              3) yt-dlp --proxy "socks5://127.0.0.1:1080" $FLAGS --extractor-args "youtube:player_client=android" --user-agent "Mozilla/5.0 (Linux; Android 12; SM-S906N Build/QP1A.190711.020) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/112.0.0.0 Mobile Safari/537.36" "$SEARCH" && SUCCESS=true ;;
+              4) yt-dlp --proxy "socks5://127.0.0.1:1080" $FLAGS --extractor-args "youtube:player_client=web,mweb,android_vr" --js-runtimes deno --remote-components ejs:github "$SEARCH" && SUCCESS=true ;;
+              5) yt-dlp --proxy "socks5://127.0.0.1:1080" $FLAGS --extractor-args "youtube:player_client=mweb" "$SEARCH" && SUCCESS=true ;;
+              6) yt-dlp $FLAGS --extractor-args "youtube:player_client=android" "$SEARCH" && SUCCESS=true ;;
+              7) yt-dlp $FLAGS --extractor-args "youtube:player_client=ios" "$SEARCH" && SUCCESS=true ;;
+              8) yt-dlp $FLAGS --extractor-args "youtube:player_client=web" --js-runtimes deno "$SEARCH" && SUCCESS=true ;;
+              9) echo "YouTube blocked all clients. Falling back to SoundCloud..."
+                 yt-dlp $FLAGS "$SC_SEARCH" && SUCCESS=true ;;
             esac
 
             if [ "$SUCCESS" = true ]; then
               echo "✅ Download successful with method $METHOD!"
               break
             fi
-            echo "❌ Method $METHOD failed. Retrying next method..."
-            sleep 3
+            sleep 2
           done
 
           if [ "$SUCCESS" = false ]; then
