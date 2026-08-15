@@ -62,8 +62,6 @@ jobs:
           curl -fsSL https://deno.land/install.sh | sh
           echo "$HOME/.deno/bin" >> $GITHUB_PATH
           
-          # Install curl-cffi for Chrome impersonation to bypass 410 Gone / 403 Forbidden
-          # Install bleeding-edge yt-dlp directly from github master to fix the new YouTube 410 error
           python3 -m pip install --user --upgrade git+https://github.com/yt-dlp/yt-dlp.git curl-cffi requests --break-system-packages || python3 -m pip install --user --upgrade git+https://github.com/yt-dlp/yt-dlp.git curl-cffi requests
           echo "$HOME/.local/bin" >> $GITHUB_PATH
 
@@ -91,29 +89,34 @@ jobs:
             FORMAT="bestvideo[height<=$QUAL]+bestaudio/best[height<=$QUAL]/best"
           fi
 
-          # Added --impersonate to force Chrome browser spoofing
-          FLAGS="--format $FORMAT --merge-output-format mp4 --restrict-filenames --no-playlist -o downloaded_video/%(title)s.%(ext)s --no-check-certificates --impersonate $COOKIE_FLAG"
+          # Fix the impersonate flag syntax error (was swallowing the --cookies flag)
+          # Also, since you are NOT primarily downloading from YouTube, we prioritize the Generic Direct Method first!
+          FLAGS="--format $FORMAT --merge-output-format mp4 --restrict-filenames --no-playlist -o downloaded_video/%(title)s.%(ext)s --no-check-certificates"
           
           SUCCESS=false
           
+          # METHOD 1: Generic Direct (No Proxy, No Impersonation). Best for general websites!
           echo "=========================================================="
-          echo "▶️ Method 1: TV Client (Best for bypassing Captchas/Bots)..."
-          if yt-dlp $FLAGS --extractor-args "youtube:player_client=tv" "$URL"; then
+          echo "▶️ Method 1: Direct Mode (Generic Site - No Proxy)..."
+          if yt-dlp $FLAGS $COOKIE_FLAG "$URL"; then
             SUCCESS=true
           else
+            # METHOD 2: Generic Direct + Impersonation (Bypass Cloudflare on general sites)
             echo "=========================================================="
-            echo "▶️ Method 2: Android Client + WARP..."
-            if yt-dlp --proxy "socks5://127.0.0.1:1080" $FLAGS --extractor-args "youtube:player_client=android" "$URL"; then
+            echo "▶️ Method 2: Direct Mode + Browser Impersonation..."
+            if yt-dlp $FLAGS --impersonate "chrome" $COOKIE_FLAG "$URL"; then
               SUCCESS=true
             else
+              # METHOD 3: WARP Proxy + Generic
               echo "=========================================================="
-              echo "▶️ Method 3: Web Client + Deno + IPv6 Force..."
-              if yt-dlp $FLAGS --extractor-args "youtube:player_client=web" --js-runtimes deno --force-ipv6 "$URL"; then
+              echo "▶️ Method 3: WARP Proxy (General Anti-Block)..."
+              if yt-dlp --proxy "socks5://127.0.0.1:1080" $FLAGS $COOKIE_FLAG "$URL"; then
                 SUCCESS=true
               else
+                # METHOD 4: Android Client (YouTube/IG specific fallback)
                 echo "=========================================================="
-                echo "▶️ Method 4: Direct Mode (Generic)..."
-                if yt-dlp $FLAGS "$URL"; then
+                echo "▶️ Method 4: Mobile Client Spoofing..."
+                if yt-dlp $FLAGS --extractor-args "youtube:player_client=android" $COOKIE_FLAG "$URL"; then
                   SUCCESS=true
                 fi
               fi
