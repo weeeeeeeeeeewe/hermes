@@ -55,16 +55,13 @@ jobs:
             --sysctl net.ipv6.conf.all.disable_ipv6=0 \
             --sysctl net.ipv4.conf.all.src_valid_mark=1 \
             caomingjun/warp
-          # اجرای سریع‌تر، منتظر ماندن کمتر
           sleep 10
 
       - name: Fast Setup (Pre-installed Tools + Nightly Binaries)
         run: |
-          # Deno is super fast to install
           curl -fsSL https://deno.land/install.sh | sh
           echo "$HOME/.deno/bin" >> $GITHUB_PATH
           
-          # Download yt-dlp Nightly directly (Takes 1-2 seconds, acts like cache)
           sudo wget -q https://github.com/yt-dlp/yt-dlp/releases/download/nightly/yt-dlp -O /usr/local/bin/yt-dlp
           sudo chmod a+rx /usr/local/bin/yt-dlp
 
@@ -76,11 +73,9 @@ jobs:
           URL="$VIDEO_URL"
           QUAL="$QUALITY"
           
-          # Fix Cookies Windows Newline Bug
           if [ -n "$COOKIES_TXT" ]; then
             echo "$COOKIES_TXT" > cookies.txt
-            # Remove carriage returns that break Linux tools
-            sed -i 's/$//' cookies.txt
+            sed -i 's/\r$//' cookies.txt
             COOKIE_FLAG="--cookies cookies.txt"
             echo "🍪 Cookies perfectly loaded & sanitized!"
           else
