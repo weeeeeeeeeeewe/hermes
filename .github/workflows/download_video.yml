@@ -57,12 +57,14 @@ jobs:
             caomingjun/warp
           sleep 10
 
-      - name: Fast Setup (Pre-installed Tools + Nightly Binaries)
+      - name: Fast Setup (Pre-installed Tools + Stable Binaries)
         run: |
+          # Install Deno
           curl -fsSL https://deno.land/install.sh | sh
           echo "$HOME/.deno/bin" >> $GITHUB_PATH
           
-          sudo wget -q https://github.com/yt-dlp/yt-dlp/releases/download/nightly/yt-dlp -O /usr/local/bin/yt-dlp
+          # Fix Exit Code 8: Use official release URL instead of Nightly (which caused 404)
+          sudo curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp
           sudo chmod a+rx /usr/local/bin/yt-dlp
 
       - name: Download Video
